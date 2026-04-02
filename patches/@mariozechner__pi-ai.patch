@@ -1,0 +1,46 @@
+diff --git a/dist/providers/openai-completions.js b/dist/providers/openai-completions.js
+index 7e3883fd31be12b62d1865364d7c8a206b9b4cfb..cc04c095cceed75af08722952faa585905be11a1 100644
+--- a/dist/providers/openai-completions.js
++++ b/dist/providers/openai-completions.js
+@@ -229,6 +229,22 @@ export const streamOpenAICompletions = (model, context, options) => {
+             if (output.stopReason === "error") {
+                 throw new Error(output.errorMessage || "Provider returned an error stop reason");
+             }
++            // Patch 12: Thinking-only response promotion.
++            // If output has a thinking block but no text block and no tool calls,
++            // promote the thinking content to a text block so it isn't discarded.
++            const hasText = output.content.some((b) => b.type === "text" && b.text?.trim());
++            const hasToolUse = output.content.some((b) => b.type === "tool_use");
++            const thinkingBlock = output.content.find((b) => b.type === "thinking" && b.thinking?.trim());
++            if (!hasText && !hasToolUse && thinkingBlock) {
++                output.content.push({ type: "text", text: thinkingBlock.thinking });
++            }
++            // Fallback: if content is entirely empty but tokens were used, inject a retry message
++            if (output.content.length === 0 || (!output.content.some((b) => (b.type === "text" && b.text?.trim()) || b.type === "tool_use"))) {
++                const outputTokens = output.usage?.output ?? output.usage?.completion_tokens ?? 0;
++                if (outputTokens > 0 && !output.content.some((b) => b.type === "text" && b.text?.trim())) {
++                    output.content.push({ type: "text", text: "I was unable to generate a visible response. Please try again." });
++                }
++            }
+             stream.push({ type: "done", reason: output.stopReason, message: output });
+             stream.end();
+         }
+diff --git a/dist/utils/validation.js b/dist/utils/validation.js
+index 52c74b2a5d8bed50546fba675f3c3f8c5c815127..d59d210fb12277fc1a9e2fd6a5e0ccf07b870ec4 100644
+--- a/dist/utils/validation.js
++++ b/dist/utils/validation.js
+@@ -41,7 +41,13 @@ if (canUseRuntimeCodegen()) {
+  * @throws Error if tool is not found or validation fails
+  */
+ export function validateToolCall(tools, toolCall) {
+-    const tool = tools.find((t) => t.name === toolCall.name);
++    let tool = tools.find((t) => t.name === toolCall.name);
++    if (!tool) {
++        // Fuzzy fallback: strip underscores/hyphens and compare lowercase
++        const normalize = (n) => n.replace(/[_-]/g, "").toLowerCase();
++        const normalizedName = normalize(toolCall.name);
++        tool = tools.find((t) => normalize(t.name) === normalizedName);
++    }
+     if (!tool) {
+         throw new Error(`Tool "${toolCall.name}" not found`);
+     }
