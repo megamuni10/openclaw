@@ -24,6 +24,11 @@ overrides:
 
 packageExtensionsChecksum: sha256-n+P/SQo4Pf+dHYpYn1Y6wL4cJEVoVzZ835N0OEp4TM8=
 
+patchedDependencies:
+  '@mariozechner/pi-ai':
+    hash: a207f8f9d3f6ae9e83ed6d9f42b5083e0a1321a36ab428d369a6530af4dc6924
+    path: patches/@mariozechner__pi-ai.patch
+
 importers:
 
   .:
@@ -51,7 +56,7 @@ importers:
         version: 0.64.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
       '@mariozechner/pi-ai':
         specifier: 0.64.0
-        version: 0.64.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
+        version: 0.64.0(patch_hash=a207f8f9d3f6ae9e83ed6d9f42b5083e0a1321a36ab428d369a6530af4dc6924)(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
       '@mariozechner/pi-coding-agent':
         specifier: 0.64.0
         version: 0.64.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
@@ -8238,7 +8243,7 @@ snapshots:
 
   '@mariozechner/pi-agent-core@0.64.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)':
     dependencies:
-      '@mariozechner/pi-ai': 0.64.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
+      '@mariozechner/pi-ai': 0.64.0(patch_hash=a207f8f9d3f6ae9e83ed6d9f42b5083e0a1321a36ab428d369a6530af4dc6924)(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - aws-crt
@@ -8248,7 +8253,7 @@ snapshots:
       - ws
       - zod
 
-  '@mariozechner/pi-ai@0.64.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)':
+  '@mariozechner/pi-ai@0.64.0(patch_hash=a207f8f9d3f6ae9e83ed6d9f42b5083e0a1321a36ab428d369a6530af4dc6924)(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)':
     dependencies:
       '@anthropic-ai/sdk': 0.73.0(zod@4.3.6)
       '@aws-sdk/client-bedrock-runtime': 3.1020.0
@@ -8276,7 +8281,7 @@ snapshots:
     dependencies:
       '@mariozechner/jiti': 2.6.5
       '@mariozechner/pi-agent-core': 0.64.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
-      '@mariozechner/pi-ai': 0.64.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
+      '@mariozechner/pi-ai': 0.64.0(patch_hash=a207f8f9d3f6ae9e83ed6d9f42b5083e0a1321a36ab428d369a6530af4dc6924)(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
       '@mariozechner/pi-tui': 0.64.0
       '@silvia-odwyer/photon-node': 0.3.4
       ajv: 8.18.0
