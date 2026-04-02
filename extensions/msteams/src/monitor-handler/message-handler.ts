@@ -364,7 +364,7 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
       : isChannel
         ? `msteams:channel:${conversationId}`
         : `msteams:group:${conversationId}`;
-    const teamsTo = isDirectMessage ? `user:${senderId}` : `conversation:${conversationId}`;
+    const teamsTo = `conversation:${conversationId}`;
 
     const route = core.channel.routing.resolveAgentRoute({
       cfg,
@@ -622,6 +622,15 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
       log.info("dispatch complete", { queuedFinal, counts });
 
       if (!queuedFinal) {
+        // Patch 9: if no content was dispatched at all (tool/block/final all zero),
+        // send a fallback so the user isn't left with silence ("This response was stopped").
+        if (counts.tool === 0 && counts.block === 0 && counts.final === 0) {
+          try {
+            await context.sendActivity("⚠️ I wasn't able to generate a response. Please try again.");
+          } catch {
+            // Best effort.
+          }
+        }
         if (isRoomish && historyKey) {
           clearHistoryEntriesIfEnabled({
             historyMap: conversationHistories,
