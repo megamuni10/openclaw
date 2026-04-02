@@ -178,6 +178,19 @@ function canonicalizeAssistantHistoryMessages(params: {
 
     const assistant = msg as RawAssistantHistoryMessage;
     if (Array.isArray(assistant.content)) {
+      // Patch 10: replace empty content arrays with a placeholder to prevent
+      // history poisoning (kimi responds with thinking-only tokens to empty
+      // assistant messages, cascading into more content:[] turns).
+      if (assistant.content.length === 0) {
+        out.push({
+          ...(assistant as unknown as Record<string, unknown>),
+          content: [{ type: "text", text: "[No response was generated for this turn.]" }],
+        } as AgentMessage);
+        touched = true;
+        repairedCount += 1;
+        repairedKinds.add("empty-array");
+        continue;
+      }
       out.push(msg);
       continue;
     }
