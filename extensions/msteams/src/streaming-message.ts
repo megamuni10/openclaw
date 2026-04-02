@@ -131,7 +131,7 @@ export class TeamsHttpStream {
    * Called by onPartialReply — accumulates text and throttles updates.
    */
   update(text: string): void {
-    if (this.stopped || this.finalized) {
+    if (this.stopped || this.finalized || this.streamFailed) {
       return;
     }
     this.accumulatedText = text;
@@ -192,7 +192,7 @@ export class TeamsHttpStream {
         try {
           await this.sendActivity({
             type: "message",
-            text: this.lastStreamedText || "",
+            text: this.accumulatedText || "",
             channelData: { feedbackLoopEnabled: this.feedbackLoopEnabled },
             entities: [AI_GENERATED_ENTITY, buildStreamInfoEntity(this.streamId, "final")],
           });
@@ -228,7 +228,7 @@ export class TeamsHttpStream {
 
   /** Whether streaming successfully delivered content (at least one chunk sent, not failed). */
   get hasContent(): boolean {
-    return this.accumulatedText.length > 0 && !this.streamFailed;
+    return this.accumulatedText.length > 0 && (!this.streamFailed || this.lastStreamedText.length > 0);
   }
 
   /** Whether streaming failed and fallback delivery is needed. */
