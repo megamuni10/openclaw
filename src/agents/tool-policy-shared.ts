@@ -12,6 +12,7 @@ type ToolProfilePolicy = {
 const TOOL_NAME_ALIASES: Record<string, string> = {
   bash: "exec",
   "apply-patch": "apply_patch",
+  sessionsspawn: "sessions_spawn",
 };
 
 export const TOOL_GROUPS: Record<string, string[]> = { ...CORE_TOOL_GROUPS };
