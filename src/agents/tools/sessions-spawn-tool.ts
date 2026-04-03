@@ -178,19 +178,10 @@ export function createSessionsSpawnTool(
           }>)
         : undefined;
 
-      if (streamTo && runtime !== "acp") {
-        return jsonResult({
-          status: "error",
-          error: `streamTo is only supported for runtime=acp; got runtime=${runtime}`,
-        });
-      }
-
-      if (resumeSessionId && runtime !== "acp") {
-        return jsonResult({
-          status: "error",
-          error: `resumeSessionId is only supported for runtime=acp; got runtime=${runtime}`,
-        });
-      }
+      // Silently ignore streamTo/resumeSessionId for non-ACP runtimes instead of
+      // erroring — models sometimes pass these params even when runtime=subagent.
+      const effectiveStreamTo = runtime === "acp" ? streamTo : undefined;
+      const effectiveResumeSessionId = runtime === "acp" ? resumeSessionId : undefined;
 
       if (runtime === "acp") {
         if (Array.isArray(attachments) && attachments.length > 0) {
@@ -205,12 +196,12 @@ export function createSessionsSpawnTool(
             task,
             label: label || undefined,
             agentId: requestedAgentId,
-            resumeSessionId,
+            resumeSessionId: effectiveResumeSessionId,
             cwd,
             mode: mode === "run" || mode === "session" ? mode : undefined,
             thread,
             sandbox,
-            streamTo,
+            streamTo: effectiveStreamTo,
           },
           {
             agentSessionKey: opts?.agentSessionKey,
@@ -228,7 +219,7 @@ export function createSessionsSpawnTool(
           result.status === "accepted" &&
           Boolean(childSessionKey) &&
           Boolean(childRunId) &&
-          streamTo !== "parent";
+          effectiveStreamTo !== "parent";
         if (shouldTrackViaRegistry && childSessionKey && childRunId) {
           const cfg = loadConfig();
           const trackedSpawnMode = resolveTrackedSpawnMode({
