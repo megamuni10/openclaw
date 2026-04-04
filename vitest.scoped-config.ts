@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import baseConfig from "./vitest.config.ts";
+import { sharedVitestConfig } from "./vitest.shared.config.ts";
 
 function normalizePathPattern(value: string): string {
   return value.replaceAll("\\", "/");
@@ -40,38 +40,47 @@ export function resolveVitestIsolation(
 export function createScopedVitestConfig(
   include: string[],
   options?: {
+    deps?: Record<string, unknown>;
     dir?: string;
     env?: Record<string, string | undefined>;
+    environment?: string;
     exclude?: string[];
+    includeOpenClawRuntimeSetup?: boolean;
+    isolate?: boolean;
+    name?: string;
     pool?: "threads" | "forks";
     passWithNoTests?: boolean;
+    setupFiles?: string[];
+    useNonIsolatedRunner?: boolean;
   },
 ) {
-  const base = baseConfig as unknown as Record<string, unknown>;
-  const baseTest =
-    (
-      baseConfig as {
-        test?: {
-          dir?: string;
-          exclude?: string[];
-          pool?: "threads" | "forks";
-          passWithNoTests?: boolean;
-        };
-      }
-    ).test ?? {};
+  const base = sharedVitestConfig as Record<string, unknown>;
+  const baseTest = sharedVitestConfig.test ?? {};
   const scopedDir = options?.dir;
   const exclude = relativizeScopedPatterns(
     [...(baseTest.exclude ?? []), ...(options?.exclude ?? [])],
     scopedDir,
   );
-  const isolate = resolveVitestIsolation(options?.env);
+  const isolate = options?.isolate ?? resolveVitestIsolation(options?.env);
+  const setupFiles = [
+    ...new Set([
+      ...(baseTest.setupFiles ?? []),
+      ...(options?.setupFiles ?? []),
+      ...(options?.includeOpenClawRuntimeSetup === false ? [] : ["test/setup-openclaw-runtime.ts"]),
+    ]),
+  ];
+  const useNonIsolatedRunner = options?.useNonIsolatedRunner ?? !isolate;
 
   return defineConfig({
     ...base,
     test: {
       ...baseTest,
+      ...(options?.deps ? { deps: options.deps } : {}),
+      ...(options?.name ? { name: options.name } : {}),
+      ...(options?.environment ? { environment: options.environment } : {}),
       isolate,
-      runner: "./test/non-isolated-runner.ts",
+      ...(useNonIsolatedRunner ? { runner: "./test/non-isolated-runner.ts" } : {}),
+      setupFiles,
       ...(scopedDir ? { dir: scopedDir } : {}),
       include: relativizeScopedPatterns(include, scopedDir),
       exclude,
