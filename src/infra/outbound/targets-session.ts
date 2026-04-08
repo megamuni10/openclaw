@@ -6,10 +6,7 @@ import {
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { deliveryContextFromSession } from "../../utils/delivery-context.js";
-import type {
-  DeliverableMessageChannel,
-  GatewayMessageChannel,
-} from "../../utils/message-channel.js";
+import type { DeliverableMessageChannel } from "../../utils/message-channel.js";
 import {
   isDeliverableMessageChannel,
   normalizeMessageChannel,
@@ -47,7 +44,7 @@ function parseExplicitTargetWithPlugin(params: {
 
 export function resolveSessionDeliveryTarget(params: {
   entry?: SessionEntry;
-  requestedChannel?: GatewayMessageChannel | "last";
+  requestedChannel?: string;
   explicitTo?: string;
   explicitThreadId?: string | number;
   fallbackChannel?: DeliverableMessageChannel;

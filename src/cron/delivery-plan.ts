@@ -20,7 +20,7 @@ function normalizeChannel(value: unknown): CronMessageChannel | undefined {
   if (!trimmed) {
     return undefined;
   }
-  return trimmed as CronMessageChannel;
+  return trimmed;
 }
 
 function normalizeTo(value: unknown): string | undefined {

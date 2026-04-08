@@ -265,7 +265,7 @@ function normalizeCronMessageChannel(input: unknown): CronMessageChannel | undef
     return undefined;
   }
   const channel = input.trim().toLowerCase();
-  return channel ? (channel as CronMessageChannel) : undefined;
+  return channel || undefined;
 }
 
 function normalizeTo(input: unknown): string | undefined {

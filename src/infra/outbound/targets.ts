@@ -25,9 +25,9 @@ import {
 } from "./channel-resolution.js";
 import { missingTargetError } from "./target-errors.js";
 
-export type OutboundChannel = DeliverableMessageChannel | "none";
+export type OutboundChannel = string;
 
-export type HeartbeatTarget = OutboundChannel | "last";
+export type HeartbeatTarget = string;
 
 export type OutboundTarget = {
   channel: OutboundChannel;

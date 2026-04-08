@@ -104,9 +104,7 @@ function resolveResetSessionNoticeRoute(params: {
 } | null {
   const commandChannel = params.command.channel?.trim().toLowerCase();
   const fallbackChannel =
-    commandChannel && commandChannel !== "webchat"
-      ? (commandChannel as RouteReplyParams["channel"])
-      : undefined;
+    commandChannel && commandChannel !== "webchat" ? commandChannel : undefined;
   const channel = params.ctx.OriginatingChannel ?? fallbackChannel;
   const to = params.ctx.OriginatingTo ?? params.command.from ?? params.command.to;
   if (!channel || channel === "webchat" || !to) {

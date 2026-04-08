@@ -12,3 +12,4 @@ export {
   buildTokenChannelStatusSummary,
   collectStatusIssuesFromLastError,
 } from "./status-helpers.js";
+export { collectBlueBubblesStatusIssues } from "./bluebubbles.js";

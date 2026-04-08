@@ -104,6 +104,7 @@ import { applyExtraParamsToAgent, resolveAgentTransportOverride } from "../extra
 import { getDmHistoryLimitFromSessionKey, limitHistoryTurns } from "../history.js";
 import { log } from "../logger.js";
 import { buildEmbeddedMessageActionDiscoveryInput } from "../message-action-discovery-input.js";
+import { createOpenRouterSessionGroupingWrapper } from "../openrouter-session-stream.js";
 import { sanitizeSessionHistory, validateReplayTurns } from "../replay-history.js";
 import {
   clearActiveEmbeddedRun,
@@ -976,6 +977,10 @@ export async function runEmbeddedAttempt(
         effectiveWorkspace,
         params.model,
         agentDir,
+      );
+      activeSession.agent.streamFn = createOpenRouterSessionGroupingWrapper(
+        activeSession.agent.streamFn,
+        params.sessionKey?.trim() || params.sessionId,
       );
       const agentTransportOverride = resolveAgentTransportOverride({
         settingsManager,

@@ -18,7 +18,7 @@ function normalizeChunkProvider(provider?: string): TextChunkProvider | undefine
   if (!normalized) {
     return undefined;
   }
-  return normalized as TextChunkProvider;
+  return normalized;
 }
 
 function resolveProviderChunkContext(

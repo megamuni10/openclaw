@@ -184,7 +184,7 @@ export function maybeRetireLegacyMainDeliveryRoute(params: {
   }
   const activeDirectRouteKey = deliveryContextKey(
     normalizeDeliveryContext({
-      channel: params.ctx.OriginatingChannel as string | undefined,
+      channel: params.ctx.OriginatingChannel,
       to: params.ctx.OriginatingTo || params.ctx.To,
       accountId: params.ctx.AccountId,
       threadId: params.ctx.MessageThreadId,

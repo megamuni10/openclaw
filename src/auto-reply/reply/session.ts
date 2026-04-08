@@ -429,11 +429,7 @@ export async function initSessionState(params: {
   const resetType = resolveSessionResetType({ sessionKey, isGroup, isThread });
   const channelReset = resolveChannelResetConfig({
     sessionCfg,
-    channel:
-      groupResolution?.channel ??
-      (ctx.OriginatingChannel as string | undefined) ??
-      ctx.Surface ??
-      ctx.Provider,
+    channel: groupResolution?.channel ?? ctx.OriginatingChannel ?? ctx.Surface ?? ctx.Provider,
   });
   const resetPolicy = resolveSessionResetPolicy({
     sessionCfg,
@@ -518,7 +514,7 @@ export async function initSessionState(params: {
 
   const baseEntry = !isNewSession && freshEntry ? entry : undefined;
   // Track the originating channel/to for announce routing (subagent announce-back).
-  const originatingChannelRaw = ctx.OriginatingChannel as string | undefined;
+  const originatingChannelRaw = ctx.OriginatingChannel;
   const lastChannelRaw = resolveLastChannelRaw({
     originatingChannelRaw,
     persistedLastChannel: baseEntry?.lastChannel,

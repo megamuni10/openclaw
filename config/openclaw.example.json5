@@ -1,0 +1,103 @@
+// Copy to: ~/.openclaw/openclaw.json (on the VPS, as the `openclaw` user)
+//
+// Notes:
+// - This is JSON5 (comments + trailing commas allowed).
+// - OpenClaw uses strict schema validation; unknown keys will prevent boot.
+// - Do not put real secrets in here. Prefer ~/.openclaw/.env for API keys.
+{
+  // Security + VPS hygiene
+  logging: {
+    // Redacts tool args/results that often contain secrets
+    redactSensitive: "tools",
+  },
+  discovery: {
+    // On a VPS, disable mDNS/Bonjour broadcasts.
+    mdns: { mode: "off" },
+  },
+  session: {
+    // Prevent cross-user context leakage if multiple people can DM the bot.
+    dmScope: "per-channel-peer",
+  },
+
+  agents: {
+    defaults: {
+      workspace: "~/.openclaw/workspace/muni-health",
+
+      // OpenRouter models (primary + fallback)
+      model: {
+        primary: "openrouter/moonshotai/kimi-k2.5",
+        fallbacks: ["openrouter/anthropic/claude-opus-4.5"],
+      },
+      models: {
+        "openrouter/moonshotai/kimi-k2.5": {},
+        "openrouter/anthropic/claude-opus-4.5": {},
+      },
+
+      // Optional: keep group replies short by default (Google Chat spaces can get noisy).
+      // systemPrompt: "You are Muni Health's assistant. Be concise and action-oriented.",
+    },
+  },
+
+  // OpenClaw-managed browser runs on the VPS (headless)
+  browser: {
+    enabled: true,
+    defaultProfile: "openclaw",
+    headless: true,
+  },
+
+  // Skills: load custom skills from a repo folder you copy onto the VPS.
+  // The directory listed here must exist on the VPS.
+  skills: {
+    load: {
+      extraDirs: ["~/munihealth/openclaw/skills"],
+      watch: true,
+      watchDebounceMs: 250,
+    },
+  },
+
+  // Google Chat (Chat API webhooks)
+  //
+  // IMPORTANT:
+  // - Expose ONLY /googlechat publicly.
+  // - Set `audience` to match your Google Chat app's webhook URL (the public HTTPS URL).
+  channels: {
+    googlechat: {
+      enabled: true,
+
+      // Put the service account JSON on the VPS and update this path.
+      // Example: "/home/openclaw/.openclaw/googlechat-service-account.json"
+      serviceAccountFile: "/home/openclaw/.openclaw/googlechat-service-account.json",
+
+      // Webhook auth verification (from OpenClaw Google Chat docs).
+      audienceType: "app-url",
+      audience: "https://<node>.<tailnet>.ts.net/googlechat",
+      webhookPath: "/googlechat",
+
+      // DMs: pairing by default (secure)
+      dm: {
+        policy: "pairing",
+        // Optional allowlist seed; pairing approvals also write to the allowFrom store on disk.
+        // allowFrom: ["users/you@yourdomain.com"],
+      },
+
+      // Groups/spaces: allowlist + require mention
+      groupPolicy: "allowlist",
+      groups: {
+        // Example allowlisted space:
+        // "spaces/AAAA": { allow: true, requireMention: true, users: ["users/you@yourdomain.com"] },
+      },
+
+      actions: { reactions: true },
+      typingIndicator: "message",
+      mediaMaxMb: 20,
+    },
+  },
+
+  // Ensure the bundled googlechat plugin is enabled (it ships disabled).
+  plugins: {
+    entries: {
+      googlechat: { enabled: true },
+    },
+  },
+}
+

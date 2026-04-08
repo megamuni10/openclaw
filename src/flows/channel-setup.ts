@@ -527,7 +527,7 @@ export async function setupChannels(
 
   if (options?.quickstartDefaults) {
     const { entries } = getChannelEntries();
-    const choice = (await prompter.select({
+    const choice = await prompter.select({
       message: "Select channel (QuickStart)",
       options: [
         ...resolveChannelSetupSelectionContributions({
@@ -542,16 +542,16 @@ export async function setupChannels(
         },
       ],
       initialValue: quickstartDefault,
-    })) as ChannelChoice | "__skip__";
+    });
     if (choice !== "__skip__") {
-      await handleChannelChoice(choice);
+      await handleChannelChoice(choice as ChannelChoice);
     }
   } else {
     const doneValue = "__done__" as const;
     const initialValue = options?.initialSelection?.[0] ?? quickstartDefault;
     while (true) {
       const { entries } = getChannelEntries();
-      const choice = (await prompter.select({
+      const choice = await prompter.select({
         message: "Select a channel",
         options: [
           ...resolveChannelSetupSelectionContributions({
@@ -566,11 +566,11 @@ export async function setupChannels(
           },
         ],
         initialValue,
-      })) as ChannelChoice | typeof doneValue;
+      });
       if (choice === doneValue) {
         break;
       }
-      await handleChannelChoice(choice);
+      await handleChannelChoice(choice as ChannelChoice);
     }
   }
 

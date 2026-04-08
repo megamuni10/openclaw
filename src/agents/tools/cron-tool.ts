@@ -416,7 +416,7 @@ function inferDeliveryFromSessionKey(agentSessionKey?: string): CronDelivery | n
 
   let channel: CronMessageChannel | undefined;
   if (markerIndex >= 1) {
-    channel = parts[0]?.trim().toLowerCase() as CronMessageChannel;
+    channel = parts[0]?.trim().toLowerCase() || undefined;
   }
 
   const delivery: CronDelivery = { mode: "announce", to: peerId };

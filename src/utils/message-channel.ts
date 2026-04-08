@@ -84,7 +84,7 @@ export const listDeliverableMessageChannels = (): ChannelId[] =>
 
 export type DeliverableMessageChannel = ChannelId;
 
-export type GatewayMessageChannel = DeliverableMessageChannel | InternalMessageChannel;
+export type GatewayMessageChannel = string;
 
 export const listGatewayMessageChannels = (): GatewayMessageChannel[] => [
   ...listDeliverableMessageChannels(),
@@ -94,7 +94,7 @@ export const listGatewayMessageChannels = (): GatewayMessageChannel[] => [
 export const listGatewayAgentChannelAliases = (): string[] =>
   Array.from(new Set([...listChatChannelAliases(), ...listPluginChannelAliases()]));
 
-export type GatewayAgentChannelHint = GatewayMessageChannel | "last";
+export type GatewayAgentChannelHint = string;
 
 export const listGatewayAgentChannelValues = (): string[] =>
   Array.from(
@@ -102,11 +102,11 @@ export const listGatewayAgentChannelValues = (): string[] =>
   );
 
 export function isGatewayMessageChannel(value: string): value is GatewayMessageChannel {
-  return listGatewayMessageChannels().includes(value as GatewayMessageChannel);
+  return listGatewayMessageChannels().includes(value);
 }
 
 export function isDeliverableMessageChannel(value: string): value is DeliverableMessageChannel {
-  return listDeliverableMessageChannels().includes(value as DeliverableMessageChannel);
+  return listDeliverableMessageChannels().includes(value);
 }
 
 export function resolveGatewayMessageChannel(
