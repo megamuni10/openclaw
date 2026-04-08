@@ -14,8 +14,6 @@ import {
   resolveCronDeliveryPlan,
 } from "./delivery-plan.js";
 import { resolveDeliveryTarget } from "./isolated-agent/delivery-target.js";
-import type { CronMessageChannel } from "./types.js";
-
 export {
   resolveCronDeliveryPlan,
   resolveFailureDestination,
@@ -36,7 +34,7 @@ export async function sendFailureNotificationAnnounce(
   message: string,
 ): Promise<void> {
   const resolvedTarget = await resolveDeliveryTarget(cfg, agentId, {
-    channel: target.channel as CronMessageChannel | undefined,
+    channel: target.channel,
     to: target.to,
     accountId: target.accountId,
   });
