@@ -37,8 +37,13 @@ function loadTelegramCommandConfigContract(): TelegramCommandConfigContract {
   return contract;
 }
 
-export const TELEGRAM_COMMAND_NAME_PATTERN =
-  loadTelegramCommandConfigContract().TELEGRAM_COMMAND_NAME_PATTERN;
+// Inlined to avoid a circular-dep crash at module load time:
+// zod-schema.providers-core → telegram/contract-api.js
+//   → security-audit.js → config-runtime.js → zod-schema.providers-core
+// Any call to loadTelegramCommandConfigContract() during module init
+// re-enters this module before other exports are initialized (TDZ).
+// This literal matches extensions/telegram/src/command-config.ts exactly.
+export const TELEGRAM_COMMAND_NAME_PATTERN: RegExp = /^[a-z0-9_]{1,32}$/;
 
 export function normalizeTelegramCommandName(value: string): string {
   return loadTelegramCommandConfigContract().normalizeTelegramCommandName(value);
