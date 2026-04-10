@@ -1,6 +1,11 @@
-import { getBundledChannelContractSurfaceModule } from "../channels/plugins/contract-surfaces.js";
+import {
+  buildCommandsMessage as buildCommandsMessageCompat,
+  buildCommandsMessagePaginated as buildCommandsMessagePaginatedCompat,
+  buildHelpMessage as buildHelpMessageCompat,
+} from "../auto-reply/command-status-builders.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveDmGroupAccessWithLists } from "../security/dm-policy-shared.js";
+export { buildCommandsPaginationKeyboard } from "./telegram-command-ui.js";
 export {
   createPreCryptoDirectDmAuthorizer,
   resolveInboundDirectDmAccessWithRuntime,
@@ -78,44 +83,8 @@ export {
   resolveModelsCommandReply,
 } from "../auto-reply/reply/commands-models.js";
 export type { ModelsProviderData } from "../auto-reply/reply/commands-models.js";
-export { resolveStoredModelOverride } from "../auto-reply/reply/model-selection.js";
-export type { StoredModelOverride } from "../auto-reply/reply/model-selection.js";
-export {
-  buildCommandsMessage,
-  buildCommandsMessagePaginated,
-  buildHelpMessage,
-} from "../auto-reply/status.js";
-
-type TelegramCommandUiContract = {
-  buildCommandsPaginationKeyboard: (
-    currentPage: number,
-    totalPages: number,
-    agentId?: string,
-  ) => Array<Array<{ text: string; callback_data: string }>>;
-};
-
-function loadTelegramCommandUiContract(): TelegramCommandUiContract {
-  const contract = getBundledChannelContractSurfaceModule<TelegramCommandUiContract>({
-    pluginId: "telegram",
-    preferredBasename: "contract-api.ts",
-  });
-  if (!contract) {
-    throw new Error("telegram command ui contract surface is unavailable");
-  }
-  return contract;
-}
-
-export function buildCommandsPaginationKeyboard(
-  currentPage: number,
-  totalPages: number,
-  agentId?: string,
-): Array<Array<{ text: string; callback_data: string }>> {
-  return loadTelegramCommandUiContract().buildCommandsPaginationKeyboard(
-    currentPage,
-    totalPages,
-    agentId,
-  );
-}
+export { resolveStoredModelOverride } from "../auto-reply/reply/stored-model-override.js";
+export type { StoredModelOverride } from "../auto-reply/reply/stored-model-override.js";
 
 export type ResolveSenderCommandAuthorizationParams = {
   cfg: OpenClawConfig;
@@ -230,4 +199,25 @@ export async function resolveSenderCommandAuthorization(
     senderAllowedForCommands,
     commandAuthorized,
   };
+}
+
+/** @deprecated Use `openclaw/plugin-sdk/command-status` instead. */
+export function buildCommandsMessage(
+  ...args: Parameters<typeof buildCommandsMessageCompat>
+): ReturnType<typeof buildCommandsMessageCompat> {
+  return buildCommandsMessageCompat(...args);
+}
+
+/** @deprecated Use `openclaw/plugin-sdk/command-status` instead. */
+export function buildCommandsMessagePaginated(
+  ...args: Parameters<typeof buildCommandsMessagePaginatedCompat>
+): ReturnType<typeof buildCommandsMessagePaginatedCompat> {
+  return buildCommandsMessagePaginatedCompat(...args);
+}
+
+/** @deprecated Use `openclaw/plugin-sdk/command-status` instead. */
+export function buildHelpMessage(
+  ...args: Parameters<typeof buildHelpMessageCompat>
+): ReturnType<typeof buildHelpMessageCompat> {
+  return buildHelpMessageCompat(...args);
 }

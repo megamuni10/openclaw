@@ -11,8 +11,14 @@ import type {
   AuthProfileStore,
 } from "../agents/auth-profiles/types.js";
 import type { ModelCatalogEntry } from "../agents/model-catalog.js";
-import type { ProviderRequestTransportOverrides } from "../agents/provider-request-config.js";
+import type { FailoverReason } from "../agents/pi-embedded-helpers/types.js";
+import type { ModelProviderRequestTransportOverrides } from "../agents/provider-request-config.js";
+import type { ProviderSystemPromptContribution } from "../agents/system-prompt-contribution.js";
+import type { PromptMode } from "../agents/system-prompt.js";
+import type { ToolFsPolicy } from "../agents/tool-fs-policy.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
+import type { ReplyDispatchKind, ReplyDispatcher } from "../auto-reply/reply/reply-dispatcher.js";
+import type { FinalizedMsgContext } from "../auto-reply/templating.js";
 import type { ThinkLevel } from "../auto-reply/thinking.js";
 import type { ReplyPayload } from "../auto-reply/types.js";
 import type { ChannelId, ChannelPlugin } from "../channels/plugins/types.js";
@@ -23,6 +29,7 @@ import type {
   ModelProviderConfig,
 } from "../config/types.js";
 import type { ModelCompatConfig } from "../config/types.models.js";
+import type { TtsAutoMode } from "../config/types.tts.js";
 import type { OperatorScope } from "../gateway/method-scopes.js";
 import type { GatewayRequestHandler } from "../gateway/server-methods/types.js";
 import type { InternalHookHandler } from "../hooks/internal-hooks.js";
@@ -30,6 +37,7 @@ import type { HookEntry } from "../hooks/types.js";
 import type { ImageGenerationProvider } from "../image-generation/types.js";
 import type { ProviderUsageSnapshot } from "../infra/provider-usage.types.js";
 import type { MediaUnderstandingProvider } from "../media-understanding/types.js";
+import type { MusicGenerationProvider } from "../music-generation/types.js";
 import type {
   RealtimeTranscriptionProviderConfig,
   RealtimeTranscriptionProviderConfiguredContext,
@@ -51,6 +59,7 @@ import type {
   RuntimeWebFetchMetadata,
   RuntimeWebSearchMetadata,
 } from "../secrets/runtime-web-tools.types.js";
+import type { SecurityAuditFinding } from "../security/audit.js";
 import type {
   SpeechDirectiveTokenParseContext,
   SpeechDirectiveTokenParseResult,
@@ -68,6 +77,7 @@ import type {
   SpeechVoiceOption,
 } from "../tts/provider-types.js";
 import type { DeliveryContext } from "../utils/delivery-context.js";
+import type { VideoGenerationProvider } from "../video-generation/types.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import type { SecretInputMode } from "./provider-auth-types.js";
 import type { createVpsAwareOAuthHandlers } from "./provider-oauth-flow.js";
@@ -132,6 +142,8 @@ export type OpenClawPluginToolContext = {
   config?: OpenClawConfig;
   /** Active runtime-resolved config snapshot when one is available. */
   runtimeConfig?: OpenClawConfig;
+  /** Effective filesystem policy for the active tool run. */
+  fsPolicy?: ToolFsPolicy;
   workspaceDir?: string;
   agentDir?: string;
   agentId?: string;
@@ -367,6 +379,14 @@ export type ProviderResolveDynamicModelContext = {
  */
 export type ProviderPrepareDynamicModelContext = ProviderResolveDynamicModelContext;
 
+export type ProviderPreferRuntimeResolvedModelContext = {
+  config?: OpenClawConfig;
+  agentDir?: string;
+  workspaceDir?: string;
+  provider: string;
+  modelId: string;
+};
+
 /**
  * Last-chance rewrite hook for provider-owned transport normalization.
  *
@@ -459,7 +479,7 @@ export type ProviderPrepareRuntimeAuthContext = {
 export type ProviderPreparedRuntimeAuth = {
   apiKey: string;
   baseUrl?: string;
-  request?: ProviderRequestTransportOverrides;
+  request?: ModelProviderRequestTransportOverrides;
   expiresAt?: number;
 };
 
@@ -473,7 +493,8 @@ export type ProviderPreparedRuntimeAuth = {
  * The helper methods cover the common OpenClaw auth resolution paths:
  *
  * - `resolveApiKeyFromConfigAndStore`: env/config/plain token/api_key profiles
- * - `resolveOAuthToken`: oauth/token profiles resolved through the auth store
+ * - `resolveOAuthToken`: oauth/token profiles resolved through the auth store,
+ *   optionally for an explicit provider override
  *
  * Plugins can still do extra provider-specific work on top (for example parse a
  * token blob, read a legacy credential file, or pick between aliases).
@@ -488,7 +509,7 @@ export type ProviderResolveUsageAuthContext = {
     providerIds?: string[];
     envDirect?: Array<string | undefined>;
   }) => string | undefined;
-  resolveOAuthToken: () => Promise<ProviderResolvedUsageAuth | null>;
+  resolveOAuthToken: (params?: { provider?: string }) => Promise<ProviderResolvedUsageAuth | null>;
 };
 
 /**
@@ -580,6 +601,7 @@ export type ProviderReplayPolicy = {
   sanitizeMode?: ProviderReplaySanitizeMode;
   sanitizeToolCallIds?: boolean;
   toolCallIdMode?: ProviderReplayToolCallIdMode;
+  preserveNativeAnthropicToolUseIds?: boolean;
   preserveSignatures?: boolean;
   sanitizeThoughtSignatures?: {
     allowBase64Only?: boolean;
@@ -749,6 +771,30 @@ export type ProviderResolveWebSocketSessionPolicyContext = {
 };
 
 /**
+ * Provider-owned failover error classification input.
+ *
+ * Use this when provider-specific transport or API errors need classification
+ * hints that generic string matching cannot express safely.
+ */
+export type ProviderFailoverErrorContext = {
+  provider?: string;
+  modelId?: string;
+  errorMessage: string;
+};
+
+/**
+ * Provider-owned config-default application input.
+ *
+ * Use this when a provider needs to add global config defaults that depend on
+ * provider auth mode or provider-specific model families.
+ */
+export type ProviderApplyConfigDefaultsContext = {
+  provider: string;
+  config: OpenClawConfig;
+  env: NodeJS.ProcessEnv;
+};
+
+/**
  * Generic embedding provider shape returned by provider plugins.
  *
  * Keep this aligned with the memory embedding contract without forcing the
@@ -828,6 +874,7 @@ export type ProviderBuildUnknownModelHintContext = {
   env: NodeJS.ProcessEnv;
   provider: string;
   modelId: string;
+  baseUrl?: string;
 };
 
 /**
@@ -844,6 +891,7 @@ export type ProviderBuiltInModelSuppressionContext = {
   env: NodeJS.ProcessEnv;
   provider: string;
   modelId: string;
+  baseUrl?: string;
 };
 
 export type ProviderBuiltInModelSuppressionResult = {
@@ -925,6 +973,8 @@ export type ProviderPluginWizardSetup = {
   choiceId?: string;
   choiceLabel?: string;
   choiceHint?: string;
+  assistantPriority?: number;
+  assistantVisibility?: "visible" | "manual-only";
   groupId?: string;
   groupLabel?: string;
   groupHint?: string;
@@ -1007,11 +1057,40 @@ export type ProviderSyntheticAuthResult = {
   mode: Exclude<ModelProviderAuthMode, "aws-sdk">;
 };
 
+export type ProviderResolveExternalOAuthProfilesContext = {
+  config?: OpenClawConfig;
+  agentDir?: string;
+  workspaceDir?: string;
+  env: NodeJS.ProcessEnv;
+  store: AuthProfileStore;
+};
+export type ProviderResolveExternalAuthProfilesContext =
+  ProviderResolveExternalOAuthProfilesContext;
+
+export type ProviderExternalOAuthProfile = {
+  profileId: string;
+  credential: OAuthCredential;
+  persistence?: "runtime-only" | "persisted";
+};
+export type ProviderExternalAuthProfile = ProviderExternalOAuthProfile;
+
 export type ProviderDeferSyntheticProfileAuthContext = {
   config?: OpenClawConfig;
   provider: string;
   providerConfig?: ModelProviderConfig;
   resolvedApiKey?: string;
+};
+
+export type ProviderSystemPromptContributionContext = {
+  config?: OpenClawConfig;
+  agentDir?: string;
+  workspaceDir?: string;
+  provider: string;
+  modelId: string;
+  promptMode: PromptMode;
+  runtimeChannel?: string;
+  runtimeCapabilities?: string[];
+  agentId?: string;
 };
 
 /** Text-inference provider capability registered by a plugin. */
@@ -1069,6 +1148,12 @@ export type ProviderPlugin = {
    * completes, `resolveDynamicModel` is called again.
    */
   prepareDynamicModel?: (ctx: ProviderPrepareDynamicModelContext) => Promise<void>;
+  /**
+   * Lets a provider plugin opt exact configured models into a runtime
+   * metadata comparison pass before the embedded runner returns the explicit
+   * entry unchanged.
+   */
+  preferRuntimeResolvedModel?: (ctx: ProviderPreferRuntimeResolvedModelContext) => boolean;
   /**
    * Provider-owned transport normalization.
    *
@@ -1287,6 +1372,20 @@ export type ProviderPlugin = {
     ctx: ProviderFetchUsageSnapshotContext,
   ) => Promise<ProviderUsageSnapshot | null | undefined> | ProviderUsageSnapshot | null | undefined;
   /**
+   * Provider-owned failover context-overflow matcher.
+   *
+   * Return true when the provider recognizes the raw error as a context-window
+   * overflow shape that generic heuristics would miss.
+   */
+  matchesContextOverflowError?: (ctx: ProviderFailoverErrorContext) => boolean | undefined;
+  /**
+   * Provider-owned failover error classification.
+   *
+   * Return a failover reason when the provider recognizes a provider-specific
+   * raw error shape. Return undefined to fall back to generic classification.
+   */
+  classifyFailoverReason?: (ctx: ProviderFailoverErrorContext) => FailoverReason | null | undefined;
+  /**
    * Provider-owned cache TTL eligibility.
    *
    * Use this when a proxy provider supports Anthropic-style prompt caching for
@@ -1357,6 +1456,24 @@ export type ProviderPlugin = {
   resolveDefaultThinkingLevel?: (
     ctx: ProviderDefaultThinkingPolicyContext,
   ) => "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "adaptive" | null | undefined;
+  /**
+   * Provider-owned system-prompt contribution.
+   *
+   * Use this when a provider/model family needs cache-aware prompt tuning
+   * without replacing the full OpenClaw-owned system prompt.
+   */
+  resolveSystemPromptContribution?: (
+    ctx: ProviderSystemPromptContributionContext,
+  ) => ProviderSystemPromptContribution | null | undefined;
+  /**
+   * Provider-owned global config defaults.
+   *
+   * Use this when config materialization needs provider-specific defaults that
+   * depend on auth mode, env, or provider model-family semantics.
+   */
+  applyConfigDefaults?: (
+    ctx: ProviderApplyConfigDefaultsContext,
+  ) => OpenClawConfig | null | undefined;
   /**
    * Provider-owned "modern model" matcher used by live profile/smoke filters.
    *
@@ -1440,6 +1557,32 @@ export type ProviderPlugin = {
   resolveSyntheticAuth?: (
     ctx: ProviderResolveSyntheticAuthContext,
   ) => ProviderSyntheticAuthResult | null | undefined;
+  /**
+   * Provider-owned external auth profile discovery.
+   *
+   * Use this when credentials are managed by an external tool and should be visible
+   * to runtime auth resolution without being written back into `auth-profiles.json`
+   * by core.
+   */
+  resolveExternalAuthProfiles?: (
+    ctx: ProviderResolveExternalAuthProfilesContext,
+  ) =>
+    | Array<ProviderExternalAuthProfile>
+    | ReadonlyArray<ProviderExternalAuthProfile>
+    | null
+    | undefined;
+  /**
+   * @deprecated Use `resolveExternalAuthProfiles`.
+   *
+   * Kept for compatibility with existing provider plugins.
+   */
+  resolveExternalOAuthProfiles?: (
+    ctx: ProviderResolveExternalOAuthProfilesContext,
+  ) =>
+    | Array<ProviderExternalOAuthProfile>
+    | ReadonlyArray<ProviderExternalOAuthProfile>
+    | null
+    | undefined;
   /**
    * Provider-owned precedence rule for stored synthetic auth profiles.
    *
@@ -1647,6 +1790,8 @@ export type PluginRealtimeVoiceProviderEntry = RealtimeVoiceProviderPlugin & {
 
 export type MediaUnderstandingProviderPlugin = MediaUnderstandingProvider;
 export type ImageGenerationProviderPlugin = ImageGenerationProvider;
+export type VideoGenerationProviderPlugin = VideoGenerationProvider;
+export type MusicGenerationProviderPlugin = MusicGenerationProvider;
 
 export type OpenClawPluginGatewayMethod = {
   method: string;
@@ -1815,6 +1960,7 @@ export type PluginInteractiveHandlerRegistration = PluginInteractiveRegistration
 
 export type OpenClawPluginHttpRouteAuth = "gateway" | "plugin";
 export type OpenClawPluginHttpRouteMatch = "exact" | "prefix";
+export type OpenClawPluginGatewayRuntimeScopeSurface = "write-default" | "trusted-operator";
 
 export type OpenClawPluginHttpRouteHandler = (
   req: IncomingMessage,
@@ -1826,6 +1972,7 @@ export type OpenClawPluginHttpRouteParams = {
   handler: OpenClawPluginHttpRouteHandler;
   auth: OpenClawPluginHttpRouteAuth;
   match?: OpenClawPluginHttpRouteMatch;
+  gatewayRuntimeScopeSurface?: OpenClawPluginGatewayRuntimeScopeSurface;
   replaceExisting?: boolean;
 };
 
@@ -1852,6 +1999,30 @@ export type OpenClawPluginCliCommandDescriptor = {
   hasSubcommands: boolean;
 };
 
+export type OpenClawPluginReloadRegistration = {
+  restartPrefixes?: string[];
+  hotPrefixes?: string[];
+  noopPrefixes?: string[];
+};
+
+export type OpenClawPluginNodeHostCommand = {
+  command: string;
+  cap?: string;
+  handle: (paramsJSON?: string | null) => Promise<string>;
+};
+
+export type OpenClawPluginSecurityAuditContext = {
+  config: OpenClawConfig;
+  sourceConfig: OpenClawConfig;
+  env: NodeJS.ProcessEnv;
+  stateDir: string;
+  configPath: string;
+};
+
+export type OpenClawPluginSecurityAuditCollector = (
+  ctx: OpenClawPluginSecurityAuditContext,
+) => SecurityAuditFinding[] | Promise<SecurityAuditFinding[]>;
+
 /** Context passed to long-lived plugin services. */
 export type OpenClawPluginServiceContext = {
   config: OpenClawConfig;
@@ -1867,6 +2038,11 @@ export type OpenClawPluginService = {
   stop?: (ctx: OpenClawPluginServiceContext) => void | Promise<void>;
 };
 
+export type CliBundleMcpMode =
+  | "claude-config-file"
+  | "codex-config-overrides"
+  | "gemini-system-settings";
+
 /** Plugin-owned CLI backend defaults used by the text-only CLI runner. */
 export type CliBackendPlugin = {
   /** Provider id used in model refs, for example `claude-cli/opus`. */
@@ -1874,12 +2050,36 @@ export type CliBackendPlugin = {
   /** Default backend config before user overrides from `agents.defaults.cliBackends`. */
   config: CliBackendConfig;
   /**
+   * Optional live-smoke metadata owned by the backend plugin.
+   *
+   * Keep provider-specific test wiring here instead of scattering it across
+   * Docker wrappers, docs, and gateway live tests.
+   */
+  liveTest?: {
+    defaultModelRef?: string;
+    defaultImageProbe?: boolean;
+    defaultMcpProbe?: boolean;
+    docker?: {
+      npmPackage?: string;
+      binaryName?: string;
+    };
+  };
+  /**
    * Whether OpenClaw should inject bundle MCP config for this backend.
    *
-   * Keep this opt-in. Only backends that explicitly consume an MCP config file
-   * should enable it.
+   * Keep this opt-in. Only backends that explicitly consume OpenClaw's bundle
+   * MCP bridge should enable it.
    */
   bundleMcp?: boolean;
+  /**
+   * Provider-owned bundle MCP integration strategy.
+   *
+   * Different CLIs wire MCP through different surfaces:
+   * - Claude: `--strict-mcp-config --mcp-config`
+   * - Codex: `-c mcp_servers=...`
+   * - Gemini: system-level `settings.json`
+   */
+  bundleMcpMode?: CliBundleMcpMode;
   /**
    * Optional config normalizer applied after user overrides merge.
    *
@@ -1901,6 +2101,9 @@ export type OpenClawPluginDefinition = {
   version?: string;
   kind?: PluginKind | PluginKind[];
   configSchema?: OpenClawPluginConfigSchema;
+  reload?: OpenClawPluginReloadRegistration;
+  nodeHostCommands?: OpenClawPluginNodeHostCommand[];
+  securityAuditCollectors?: OpenClawPluginSecurityAuditCollector[];
   register?: (api: OpenClawPluginApi) => void | Promise<void>;
   activate?: (api: OpenClawPluginApi) => void | Promise<void>;
 };
@@ -1910,6 +2113,23 @@ export type OpenClawPluginModule =
   | ((api: OpenClawPluginApi) => void | Promise<void>);
 
 export type PluginRegistrationMode = "full" | "setup-only" | "setup-runtime" | "cli-metadata";
+
+export type PluginConfigMigration = (config: OpenClawConfig) =>
+  | {
+      config: OpenClawConfig;
+      changes: string[];
+    }
+  | null
+  | undefined;
+
+export type PluginSetupAutoEnableContext = {
+  config: OpenClawConfig;
+  env: NodeJS.ProcessEnv;
+};
+
+export type PluginSetupAutoEnableProbe = (
+  ctx: PluginSetupAutoEnableContext,
+) => string | string[] | null | undefined;
 
 /** Main registration API injected into native plugin entry files. */
 export type OpenClawPluginApi = {
@@ -1942,6 +2162,13 @@ export type OpenClawPluginApi = {
   registerHttpRoute: (params: OpenClawPluginHttpRouteParams) => void;
   /** Register a native messaging channel plugin (channel capability). */
   registerChannel: (registration: OpenClawPluginChannelRegistration | ChannelPlugin) => void;
+  /**
+   * Register a gateway RPC method for this plugin.
+   *
+   * Reserved core admin namespaces (`config.*`, `exec.approvals.*`,
+   * `wizard.*`, `update.*`) always normalize to `operator.admin` even if a
+   * narrower scope is requested.
+   */
   registerGatewayMethod: (
     method: string,
     handler: GatewayRequestHandler,
@@ -1962,9 +2189,16 @@ export type OpenClawPluginApi = {
       descriptors?: OpenClawPluginCliCommandDescriptor[];
     },
   ) => void;
+  registerReload: (registration: OpenClawPluginReloadRegistration) => void;
+  registerNodeHostCommand: (command: OpenClawPluginNodeHostCommand) => void;
+  registerSecurityAuditCollector: (collector: OpenClawPluginSecurityAuditCollector) => void;
   registerService: (service: OpenClawPluginService) => void;
   /** Register a text-only CLI backend used by the local CLI runner. */
   registerCliBackend: (backend: CliBackendPlugin) => void;
+  /** Register a lightweight config migration that can run before plugin runtime loads. */
+  registerConfigMigration: (migrate: PluginConfigMigration) => void;
+  /** Register a lightweight config probe that can auto-enable this plugin generically. */
+  registerAutoEnableProbe: (probe: PluginSetupAutoEnableProbe) => void;
   /** Register a native model/provider plugin (text inference capability). */
   registerProvider: (provider: ProviderPlugin) => void;
   /** Register a speech synthesis provider (speech capability). */
@@ -1977,6 +2211,10 @@ export type OpenClawPluginApi = {
   registerMediaUnderstandingProvider: (provider: MediaUnderstandingProviderPlugin) => void;
   /** Register an image generation provider (image generation capability). */
   registerImageGenerationProvider: (provider: ImageGenerationProviderPlugin) => void;
+  /** Register a video generation provider (video generation capability). */
+  registerVideoGenerationProvider: (provider: VideoGenerationProviderPlugin) => void;
+  /** Register a music generation provider (music generation capability). */
+  registerMusicGenerationProvider: (provider: MusicGenerationProviderPlugin) => void;
   /** Register a web fetch provider (web fetch capability). */
   registerWebFetchProvider: (provider: WebFetchProviderPlugin) => void;
   /** Register a web search provider (web search capability). */
@@ -1996,13 +2234,38 @@ export type OpenClawPluginApi = {
     id: string,
     factory: import("../context-engine/registry.js").ContextEngineFactory,
   ) => void;
-  /** Register the system prompt section builder for this memory plugin (exclusive slot). */
+  /** Register a compaction provider (pluggable summarization backend). */
+  registerCompactionProvider: (
+    provider: import("./compaction-provider.js").CompactionProvider,
+  ) => void;
+  /** Register the active memory capability for this memory plugin (exclusive slot). */
+  registerMemoryCapability: (
+    capability: import("./memory-state.js").MemoryPluginCapability,
+  ) => void;
+  /**
+   * Register the system prompt section builder for this memory plugin (exclusive slot).
+   * @deprecated Use registerMemoryCapability({ promptBuilder }) instead.
+   */
   registerMemoryPromptSection: (
     builder: import("./memory-state.js").MemoryPromptSectionBuilder,
   ) => void;
-  /** Register the pre-compaction flush plan resolver for this memory plugin (exclusive slot). */
+  /** Register an additive memory-adjacent prompt section (non-exclusive). */
+  registerMemoryPromptSupplement: (
+    builder: import("./memory-state.js").MemoryPromptSectionBuilder,
+  ) => void;
+  /** Register an additive memory-adjacent search/read corpus supplement (non-exclusive). */
+  registerMemoryCorpusSupplement: (
+    supplement: import("./memory-state.js").MemoryCorpusSupplement,
+  ) => void;
+  /**
+   * Register the pre-compaction flush plan resolver for this memory plugin (exclusive slot).
+   * @deprecated Use registerMemoryCapability({ flushPlanResolver }) instead.
+   */
   registerMemoryFlushPlan: (resolver: import("./memory-state.js").MemoryFlushPlanResolver) => void;
-  /** Register the active memory runtime adapter for this memory plugin (exclusive slot). */
+  /**
+   * Register the active memory runtime adapter for this memory plugin (exclusive slot).
+   * @deprecated Use registerMemoryCapability({ runtime }) instead.
+   */
   registerMemoryRuntime: (runtime: import("./memory-state.js").MemoryPluginRuntime) => void;
   /** Register a memory embedding provider adapter. Multiple adapters may coexist. */
   registerMemoryEmbeddingProvider: (
@@ -2062,6 +2325,7 @@ export type PluginHookName =
   | "gateway_start"
   | "gateway_stop"
   | "before_dispatch"
+  | "reply_dispatch"
   | "before_install";
 
 export const PLUGIN_HOOK_NAMES = [
@@ -2092,6 +2356,7 @@ export const PLUGIN_HOOK_NAMES = [
   "gateway_start",
   "gateway_stop",
   "before_dispatch",
+  "reply_dispatch",
   "before_install",
 ] as const satisfies readonly PluginHookName[];
 
@@ -2369,6 +2634,44 @@ export type PluginHookBeforeDispatchResult = {
   handled: boolean;
   /** Plugin-defined reply text (used when handled=true). */
   text?: string;
+};
+
+// reply_dispatch hook
+export type PluginHookReplyDispatchEvent = {
+  ctx: FinalizedMsgContext;
+  runId?: string;
+  sessionKey?: string;
+  inboundAudio: boolean;
+  sessionTtsAuto?: TtsAutoMode;
+  ttsChannel?: string;
+  suppressUserDelivery?: boolean;
+  shouldRouteToOriginating: boolean;
+  originatingChannel?: string;
+  originatingTo?: string;
+  shouldSendToolSummaries: boolean;
+  sendPolicy: "allow" | "deny";
+  isTailDispatch?: boolean;
+};
+
+export type PluginHookReplyDispatchContext = {
+  cfg: OpenClawConfig;
+  dispatcher: ReplyDispatcher;
+  abortSignal?: AbortSignal;
+  onReplyStart?: () => Promise<void> | void;
+  recordProcessed: (
+    outcome: "completed" | "skipped" | "error",
+    opts?: {
+      reason?: string;
+      error?: string;
+    },
+  ) => void;
+  markIdle: (reason: string) => void;
+};
+
+export type PluginHookReplyDispatchResult = {
+  handled: boolean;
+  queuedFinal: boolean;
+  counts: Record<ReplyDispatchKind, number>;
 };
 
 // message_received hook
@@ -2789,6 +3092,10 @@ export type PluginHookHandlerMap = {
     event: PluginHookBeforeDispatchEvent,
     ctx: PluginHookBeforeDispatchContext,
   ) => Promise<PluginHookBeforeDispatchResult | void> | PluginHookBeforeDispatchResult | void;
+  reply_dispatch: (
+    event: PluginHookReplyDispatchEvent,
+    ctx: PluginHookReplyDispatchContext,
+  ) => Promise<PluginHookReplyDispatchResult | void> | PluginHookReplyDispatchResult | void;
   message_received: (
     event: PluginHookMessageReceivedEvent,
     ctx: PluginHookMessageContext,

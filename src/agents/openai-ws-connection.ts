@@ -19,7 +19,7 @@ import { buildOpenAIWebSocketWarmUpPayload } from "./openai-ws-request.js";
 import {
   buildProviderRequestTlsClientOptions,
   resolveProviderRequestPolicyConfig,
-  type ProviderRequestTransportOverrides,
+  type ModelProviderRequestTransportOverrides,
 } from "./provider-request-config.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,9 +39,14 @@ export interface ResponseObject {
 }
 
 export interface UsageInfo {
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  input_tokens_details?: {
+    cached_tokens?: number;
+  };
 }
 
 export type OpenAIResponsesAssistantPhase = "commentary" | "final_answer";
@@ -284,7 +289,7 @@ export interface OpenAIWebSocketManagerOptions {
   /** Extra headers merged into the initial WebSocket handshake request. */
   headers?: Record<string, string>;
   /** Optional transport overrides for provider-owned auth or TLS wiring. */
-  request?: ProviderRequestTransportOverrides;
+  request?: ModelProviderRequestTransportOverrides;
 }
 
 export type OpenAIWebSocketConnectionState =
@@ -321,7 +326,7 @@ type InternalEvents = {
  *   }
  * });
  *
- * manager.send({ type: "response.create", model: "gpt-5.2", input: [...] });
+ * manager.send({ type: "response.create", model: "gpt-5.4", input: [...] });
  * ```
  */
 export class OpenAIWebSocketManager extends EventEmitter<InternalEvents> {
@@ -341,7 +346,7 @@ export class OpenAIWebSocketManager extends EventEmitter<InternalEvents> {
   private readonly backoffDelaysMs: readonly number[];
   private readonly socketFactory: (url: string, options: ClientOptions) => WebSocket;
   private readonly headers?: Record<string, string>;
-  private readonly request?: ProviderRequestTransportOverrides;
+  private readonly request?: ModelProviderRequestTransportOverrides;
 
   constructor(options: OpenAIWebSocketManagerOptions = {}) {
     super();
@@ -462,6 +467,7 @@ export class OpenAIWebSocketManager extends EventEmitter<InternalEvents> {
         },
         precedence: "defaults-win",
         request: this.request,
+        allowPrivateNetwork: this.request?.allowPrivateNetwork === true,
       });
       const socket = this.socketFactory(this.wsUrl, {
         headers: requestConfig.headers,

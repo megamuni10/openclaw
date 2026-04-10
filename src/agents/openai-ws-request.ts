@@ -1,4 +1,5 @@
 import type { StreamFn } from "@mariozechner/pi-agent-core";
+import { readStringValue } from "../shared/string-coerce.js";
 import type {
   FunctionToolDefinition,
   InputItem,
@@ -7,6 +8,7 @@ import type {
 } from "./openai-ws-connection.js";
 import { resolveOpenAITextVerbosity } from "./pi-embedded-runner/openai-stream-wrappers.js";
 import { resolveProviderRequestPolicyConfig } from "./provider-request-config.js";
+import { stripSystemPromptCacheBoundary } from "./system-prompt-cache-boundary.js";
 
 type WsModel = Parameters<StreamFn>[0];
 type WsContext = Parameters<StreamFn>[1];
@@ -17,6 +19,7 @@ type WsOptions = Parameters<StreamFn>[2] & {
   toolChoice?: unknown;
   textVerbosity?: string;
   text_verbosity?: string;
+  reasoning?: string;
   reasoningEffort?: string;
   reasoningSummary?: string;
 };
@@ -67,15 +70,16 @@ export function buildOpenAIWebSocketResponseCreatePayload(params: {
     extraParams.tool_choice = streamOpts.toolChoice;
   }
 
-  if (
-    streamOpts?.reasoningEffort !== "none" &&
-    (streamOpts?.reasoningEffort || streamOpts?.reasoningSummary)
-  ) {
+  const reasoningEffort =
+    streamOpts?.reasoningEffort ??
+    streamOpts?.reasoning ??
+    (params.model.reasoning ? "high" : undefined);
+  if (reasoningEffort !== "none" && (reasoningEffort || streamOpts?.reasoningSummary)) {
     const reasoning: { effort?: string; summary?: string } = {};
-    if (streamOpts.reasoningEffort !== undefined) {
-      reasoning.effort = streamOpts.reasoningEffort;
+    if (reasoningEffort !== undefined) {
+      reasoning.effort = reasoningEffort;
     }
-    if (streamOpts.reasoningSummary !== undefined) {
+    if (streamOpts?.reasoningSummary !== undefined) {
       reasoning.summary = streamOpts.reasoningSummary;
     }
     extraParams.reasoning = reasoning;
@@ -93,9 +97,9 @@ export function buildOpenAIWebSocketResponseCreatePayload(params: {
   }
 
   const supportsResponsesStoreField = resolveProviderRequestPolicyConfig({
-    provider: typeof params.model.provider === "string" ? params.model.provider : undefined,
-    api: typeof params.model.api === "string" ? params.model.api : undefined,
-    baseUrl: typeof params.model.baseUrl === "string" ? params.model.baseUrl : undefined,
+    provider: readStringValue(params.model.provider),
+    api: readStringValue(params.model.api),
+    baseUrl: readStringValue(params.model.baseUrl),
     compat: (params.model as { compat?: { supportsStore?: boolean } }).compat,
     capability: "llm",
     transport: "websocket",
@@ -106,7 +110,9 @@ export function buildOpenAIWebSocketResponseCreatePayload(params: {
     model: params.model.id,
     ...(supportsResponsesStoreField ? { store: false } : {}),
     input: params.turnInput.inputItems,
-    instructions: params.context.systemPrompt ?? undefined,
+    instructions: params.context.systemPrompt
+      ? stripSystemPromptCacheBoundary(params.context.systemPrompt)
+      : undefined,
     tools: params.tools.length > 0 ? params.tools : undefined,
     ...(params.turnInput.previousResponseId
       ? { previous_response_id: params.turnInput.previousResponseId }

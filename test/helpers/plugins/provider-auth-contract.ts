@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearRuntimeAuthProfileStoreSnapshots } from "../../../src/agents/auth-profiles/store.js";
 import type { AuthProfileStore } from "../../../src/agents/auth-profiles/types.js";
-import { registerProviders, requireProvider } from "../../../src/plugins/contracts/testkit.js";
 import { createNonExitingRuntime } from "../../../src/runtime.js";
+import { resolveRelativeBundledPluginPublicModuleId } from "../../../src/test-utils/bundled-plugin-public-surface.js";
 import type {
   WizardMultiSelectParams,
   WizardPrompter,
   WizardProgress,
   WizardSelectParams,
 } from "../../../src/wizard/prompts.js";
+import { registerProviders, requireProvider } from "./contracts-testkit.js";
 
 type LoginOpenAICodexOAuth =
   (typeof import("openclaw/plugin-sdk/provider-auth-login"))["loginOpenAICodexOAuth"];
@@ -25,13 +26,18 @@ const loginOpenAICodexOAuthMock = vi.hoisted(() => vi.fn<LoginOpenAICodexOAuth>(
 const githubCopilotLoginCommandMock = vi.hoisted(() => vi.fn<GithubCopilotLoginCommand>());
 const ensureAuthProfileStoreMock = vi.hoisted(() => vi.fn<EnsureAuthProfileStore>());
 const listProfilesForProviderMock = vi.hoisted(() => vi.fn<ListProfilesForProvider>());
-const providerAuthContractModules = vi.hoisted(() => ({
-  githubCopilotIndexModuleUrl: new URL(
-    "../../../extensions/github-copilot/index.ts",
-    import.meta.url,
-  ).href,
-  openAIIndexModuleUrl: new URL("../../../extensions/openai/index.ts", import.meta.url).href,
-}));
+const providerAuthContractModules = {
+  githubCopilotIndexModuleUrl: resolveRelativeBundledPluginPublicModuleId({
+    fromModuleUrl: import.meta.url,
+    pluginId: "github-copilot",
+    artifactBasename: "index.js",
+  }),
+  openAIIndexModuleUrl: resolveRelativeBundledPluginPublicModuleId({
+    fromModuleUrl: import.meta.url,
+    pluginId: "openai",
+    artifactBasename: "index.js",
+  }),
+};
 
 vi.mock("openclaw/plugin-sdk/provider-auth-login", async () => {
   const actual = await vi.importActual<typeof import("openclaw/plugin-sdk/provider-auth-login")>(
@@ -170,7 +176,7 @@ export function describeOpenAICodexProviderAuthContract() {
       const { default: openAIPlugin } = await importBundledProviderPlugin<{
         default: Parameters<typeof registerProviders>[0];
       }>(providerAuthContractModules.openAIIndexModuleUrl);
-      const provider = requireProvider(registerProviders(openAIPlugin), "openai-codex");
+      const provider = requireProvider(await registerProviders(openAIPlugin), "openai-codex");
       loginOpenAICodexOAuthMock.mockResolvedValueOnce({
         refresh: "refresh-token",
         access: params.access,
@@ -191,7 +197,7 @@ export function describeOpenAICodexProviderAuthContract() {
       const { default: openAIPlugin } = await importBundledProviderPlugin<{
         default: Parameters<typeof registerProviders>[0];
       }>(providerAuthContractModules.openAIIndexModuleUrl);
-      return requireProvider(registerProviders(openAIPlugin), "openai-codex");
+      return requireProvider(await registerProviders(openAIPlugin), "openai-codex");
     }
 
     it("keeps OAuth auth results provider-owned", async () => {
@@ -323,7 +329,7 @@ export function describeGithubCopilotProviderAuthContract() {
       const { default: githubCopilotPlugin } = await importBundledProviderPlugin<{
         default: Parameters<typeof registerProviders>[0];
       }>(providerAuthContractModules.githubCopilotIndexModuleUrl);
-      return requireProvider(registerProviders(githubCopilotPlugin), "github-copilot");
+      return requireProvider(await registerProviders(githubCopilotPlugin), "github-copilot");
     }
 
     it("keeps device auth results provider-owned", async () => {

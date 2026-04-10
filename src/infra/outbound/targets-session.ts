@@ -1,12 +1,15 @@
 import {
   comparableChannelTargetsShareRoute,
-  parseExplicitTargetForChannel,
-  resolveComparableTargetForChannel,
+  parseExplicitTargetForLoadedChannel,
+  resolveComparableTargetForLoadedChannel,
 } from "../../channels/plugins/target-parsing.js";
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { deliveryContextFromSession } from "../../utils/delivery-context.js";
-import type { DeliverableMessageChannel } from "../../utils/message-channel.js";
+import type {
+  DeliverableMessageChannel,
+  GatewayMessageChannel,
+} from "../../utils/message-channel.js";
 import {
   isDeliverableMessageChannel,
   normalizeMessageChannel,
@@ -39,12 +42,12 @@ function parseExplicitTargetWithPlugin(params: {
   if (!provider) {
     return null;
   }
-  return parseExplicitTargetForChannel(provider, raw);
+  return parseExplicitTargetForLoadedChannel(provider, raw);
 }
 
 export function resolveSessionDeliveryTarget(params: {
   entry?: SessionEntry;
-  requestedChannel?: string;
+  requestedChannel?: GatewayMessageChannel;
   explicitTo?: string;
   explicitThreadId?: string | number;
   fallbackChannel?: DeliverableMessageChannel;
@@ -65,7 +68,7 @@ export function resolveSessionDeliveryTarget(params: {
   const sessionLastChannel =
     context?.channel && isDeliverableMessageChannel(context.channel) ? context.channel : undefined;
   const parsedSessionTarget = sessionLastChannel
-    ? resolveComparableTargetForChannel({
+    ? resolveComparableTargetForLoadedChannel({
         channel: sessionLastChannel,
         rawTarget: context?.to,
         fallbackThreadId: context?.threadId,
@@ -75,7 +78,7 @@ export function resolveSessionDeliveryTarget(params: {
   const hasTurnSourceChannel = params.turnSourceChannel != null;
   const parsedTurnSourceTarget =
     hasTurnSourceChannel && params.turnSourceChannel
-      ? resolveComparableTargetForChannel({
+      ? resolveComparableTargetForLoadedChannel({
           channel: params.turnSourceChannel,
           rawTarget: params.turnSourceTo,
           fallbackThreadId: params.turnSourceThreadId,

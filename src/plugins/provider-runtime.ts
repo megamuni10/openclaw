@@ -1,16 +1,18 @@
 import type { AuthProfileCredential, OAuthCredential } from "../agents/auth-profiles/types.js";
 import { normalizeProviderId } from "../agents/provider-id.js";
+import type { ProviderSystemPromptContribution } from "../agents/system-prompt-contribution.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { ModelProviderConfig } from "../config/types.js";
-import {
-  resolveCatalogHookProviderPluginIds,
-  resolveOwningPluginIdsForProvider,
-} from "./providers.js";
-import { resolvePluginProviders } from "./providers.runtime.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
+import { resolveBundledProviderPolicySurface } from "./provider-public-artifacts.js";
+import { resolveCatalogHookProviderPluginIds } from "./providers.js";
+import { isPluginProvidersLoadInFlight, resolvePluginProviders } from "./providers.runtime.js";
 import { resolvePluginCacheInputs } from "./roots.js";
+import { getActivePluginRegistryWorkspaceDirFromState } from "./runtime-state.js";
 import type {
   ProviderAuthDoctorHintContext,
   ProviderAugmentModelCatalogContext,
+  ProviderExternalAuthProfile,
   ProviderBuildMissingAuthMessageContext,
   ProviderBuildUnknownModelHintContext,
   ProviderBuiltInModelSuppressionContext,
@@ -21,6 +23,7 @@ import type {
   ProviderCreateStreamFnContext,
   ProviderDefaultThinkingPolicyContext,
   ProviderFetchUsageSnapshotContext,
+  ProviderFailoverErrorContext,
   ProviderNormalizeToolSchemasContext,
   ProviderNormalizeConfigContext,
   ProviderNormalizeModelIdContext,
@@ -33,7 +36,11 @@ import type {
   ProviderModernModelPolicyContext,
   ProviderPrepareExtraParamsContext,
   ProviderPrepareDynamicModelContext,
+  ProviderPreferRuntimeResolvedModelContext,
+  ProviderResolveExternalAuthProfilesContext,
+  ProviderResolveExternalOAuthProfilesContext,
   ProviderPrepareRuntimeAuthContext,
+  ProviderApplyConfigDefaultsContext,
   ProviderResolveConfigApiKeyContext,
   ProviderSanitizeReplayHistoryContext,
   ProviderResolveUsageAuthContext,
@@ -41,6 +48,7 @@ import type {
   ProviderResolveDynamicModelContext,
   ProviderResolveTransportTurnStateContext,
   ProviderResolveWebSocketSessionPolicyContext,
+  ProviderSystemPromptContributionContext,
   ProviderRuntimeModel,
   ProviderThinkingPolicyContext,
   ProviderTransportTurnState,
@@ -101,13 +109,14 @@ function buildHookProviderCacheKey(params: {
   config?: OpenClawConfig;
   workspaceDir?: string;
   onlyPluginIds?: string[];
+  providerRefs?: string[];
   env?: NodeJS.ProcessEnv;
 }) {
   const { roots } = resolvePluginCacheInputs({
     workspaceDir: params.workspaceDir,
     env: params.env,
   });
-  return `${roots.workspace ?? ""}::${roots.global}::${roots.stock ?? ""}::${JSON.stringify(params.config ?? null)}::${JSON.stringify(params.onlyPluginIds ?? [])}`;
+  return `${roots.workspace ?? ""}::${roots.global}::${roots.stock ?? ""}::${JSON.stringify(params.config ?? null)}::${JSON.stringify(params.onlyPluginIds ?? [])}::${JSON.stringify(params.providerRefs ?? [])}`;
 }
 
 export function clearProviderRuntimeHookCache(): void {
@@ -130,24 +139,41 @@ function resolveProviderPluginsForHooks(params: {
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
   onlyPluginIds?: string[];
+  providerRefs?: string[];
 }): ProviderPlugin[] {
   const env = params.env ?? process.env;
+  const workspaceDir = params.workspaceDir ?? getActivePluginRegistryWorkspaceDirFromState();
   const cacheBucket = resolveHookProviderCacheBucket({
     config: params.config,
     env,
   });
   const cacheKey = buildHookProviderCacheKey({
     config: params.config,
-    workspaceDir: params.workspaceDir,
+    workspaceDir,
     onlyPluginIds: params.onlyPluginIds,
+    providerRefs: params.providerRefs,
     env,
   });
   const cached = cacheBucket.get(cacheKey);
   if (cached) {
     return cached;
   }
+  if (
+    isPluginProvidersLoadInFlight({
+      ...params,
+      workspaceDir,
+      env,
+      activate: false,
+      cache: false,
+      bundledProviderAllowlistCompat: true,
+      bundledProviderVitestCompat: true,
+    })
+  ) {
+    return [];
+  }
   const resolved = resolvePluginProviders({
     ...params,
+    workspaceDir,
     env,
     activate: false,
     cache: false,
@@ -163,9 +189,10 @@ function resolveProviderPluginsForCatalogHooks(params: {
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
 }): ProviderPlugin[] {
+  const workspaceDir = params.workspaceDir ?? getActivePluginRegistryWorkspaceDirFromState();
   const onlyPluginIds = resolveCatalogHookProviderPluginIds({
     config: params.config,
-    workspaceDir: params.workspaceDir,
+    workspaceDir,
     env: params.env,
   });
   if (onlyPluginIds.length === 0) {
@@ -173,6 +200,7 @@ function resolveProviderPluginsForCatalogHooks(params: {
   }
   return resolveProviderPluginsForHooks({
     ...params,
+    workspaceDir,
     onlyPluginIds,
   });
 }
@@ -183,18 +211,11 @@ export function resolveProviderRuntimePlugin(params: {
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
 }): ProviderPlugin | undefined {
-  const owningPluginIds = resolveOwningPluginIdsForProvider({
-    provider: params.provider,
-    config: params.config,
-    workspaceDir: params.workspaceDir,
-    env: params.env,
-  });
-  if (!owningPluginIds || owningPluginIds.length === 0) {
-    return undefined;
-  }
   return resolveProviderPluginsForHooks({
-    ...params,
-    onlyPluginIds: owningPluginIds,
+    config: params.config,
+    workspaceDir: params.workspaceDir ?? getActivePluginRegistryWorkspaceDirFromState(),
+    env: params.env,
+    providerRefs: [params.provider],
   }).find((plugin) => matchesProviderId(plugin, params.provider));
 }
 
@@ -208,6 +229,19 @@ export function runProviderDynamicModel(params: {
   return resolveProviderRuntimePlugin(params)?.resolveDynamicModel?.(params.context) ?? undefined;
 }
 
+export function resolveProviderSystemPromptContribution(params: {
+  provider: string;
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  context: ProviderSystemPromptContributionContext;
+}): ProviderSystemPromptContribution | undefined {
+  return (
+    resolveProviderRuntimePlugin(params)?.resolveSystemPromptContribution?.(params.context) ??
+    undefined
+  );
+}
+
 export async function prepareProviderDynamicModel(params: {
   provider: string;
   config?: OpenClawConfig;
@@ -216,6 +250,18 @@ export async function prepareProviderDynamicModel(params: {
   context: ProviderPrepareDynamicModelContext;
 }): Promise<void> {
   await resolveProviderRuntimePlugin(params)?.prepareDynamicModel?.(params.context);
+}
+
+export function shouldPreferProviderRuntimeResolvedModel(params: {
+  provider: string;
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  context: ProviderPreferRuntimeResolvedModelContext;
+}): boolean {
+  return (
+    resolveProviderRuntimePlugin(params)?.preferRuntimeResolvedModel?.(params.context) ?? false
+  );
 }
 
 export function normalizeProviderResolvedModelWithPlugin(params: {
@@ -369,9 +415,7 @@ export function normalizeProviderModelIdWithPlugin(params: {
   context: ProviderNormalizeModelIdContext;
 }): string | undefined {
   const plugin = resolveProviderHookPlugin(params);
-  const normalized = plugin?.normalizeModelId?.(params.context);
-  const trimmed = normalized?.trim();
-  return trimmed ? trimmed : undefined;
+  return normalizeOptionalString(plugin?.normalizeModelId?.(params.context));
 }
 
 export function normalizeProviderTransportWithPlugin(params: {
@@ -410,7 +454,30 @@ export function normalizeProviderConfigWithPlugin(params: {
   env?: NodeJS.ProcessEnv;
   context: ProviderNormalizeConfigContext;
 }): ModelProviderConfig | undefined {
-  return resolveProviderHookPlugin(params)?.normalizeConfig?.(params.context) ?? undefined;
+  const hasConfigChange = (normalized: ModelProviderConfig) =>
+    normalized !== params.context.providerConfig;
+  const bundledSurface = resolveBundledProviderPolicySurface(params.provider);
+  if (bundledSurface?.normalizeConfig) {
+    const normalized = bundledSurface.normalizeConfig(params.context);
+    return normalized && hasConfigChange(normalized) ? normalized : undefined;
+  }
+  const matchedPlugin = resolveProviderHookPlugin(params);
+  const normalizedMatched = matchedPlugin?.normalizeConfig?.(params.context);
+  if (normalizedMatched && hasConfigChange(normalizedMatched)) {
+    return normalizedMatched;
+  }
+
+  for (const candidate of resolveProviderPluginsForHooks(params)) {
+    if (!candidate.normalizeConfig || candidate === matchedPlugin) {
+      continue;
+    }
+    const normalized = candidate.normalizeConfig(params.context);
+    if (normalized && hasConfigChange(normalized)) {
+      return normalized;
+    }
+  }
+
+  return undefined;
 }
 
 export function applyProviderNativeStreamingUsageCompatWithPlugin(params: {
@@ -433,9 +500,13 @@ export function resolveProviderConfigApiKeyWithPlugin(params: {
   env?: NodeJS.ProcessEnv;
   context: ProviderResolveConfigApiKeyContext;
 }): string | undefined {
-  const resolved = resolveProviderHookPlugin(params)?.resolveConfigApiKey?.(params.context);
-  const trimmed = resolved?.trim();
-  return trimmed ? trimmed : undefined;
+  const bundledSurface = resolveBundledProviderPolicySurface(params.provider);
+  if (bundledSurface?.resolveConfigApiKey) {
+    return normalizeOptionalString(bundledSurface.resolveConfigApiKey(params.context));
+  }
+  return normalizeOptionalString(
+    resolveProviderHookPlugin(params)?.resolveConfigApiKey?.(params.context),
+  );
 }
 
 export function resolveProviderReplayPolicyWithPlugin(params: {
@@ -593,6 +664,47 @@ export async function resolveProviderUsageSnapshotWithPlugin(params: {
   return await resolveProviderRuntimePlugin(params)?.fetchUsageSnapshot?.(params.context);
 }
 
+export function matchesProviderContextOverflowWithPlugin(params: {
+  provider?: string;
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  context: ProviderFailoverErrorContext;
+}): boolean {
+  const plugins = params.provider
+    ? [resolveProviderHookPlugin({ ...params, provider: params.provider })].filter(
+        (plugin): plugin is ProviderPlugin => Boolean(plugin),
+      )
+    : resolveProviderPluginsForHooks(params);
+  for (const plugin of plugins) {
+    if (plugin.matchesContextOverflowError?.(params.context)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function classifyProviderFailoverReasonWithPlugin(params: {
+  provider?: string;
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  context: ProviderFailoverErrorContext;
+}) {
+  const plugins = params.provider
+    ? [resolveProviderHookPlugin({ ...params, provider: params.provider })].filter(
+        (plugin): plugin is ProviderPlugin => Boolean(plugin),
+      )
+    : resolveProviderPluginsForHooks(params);
+  for (const plugin of plugins) {
+    const reason = plugin.classifyFailoverReason?.(params.context);
+    if (reason) {
+      return reason;
+    }
+  }
+  return undefined;
+}
+
 export function formatProviderAuthProfileApiKeyWithPlugin(params: {
   provider: string;
   config?: OpenClawConfig;
@@ -663,6 +775,20 @@ export function resolveProviderDefaultThinkingLevel(params: {
   return resolveProviderRuntimePlugin(params)?.resolveDefaultThinkingLevel?.(params.context);
 }
 
+export function applyProviderConfigDefaultsWithPlugin(params: {
+  provider: string;
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  context: ProviderApplyConfigDefaultsContext;
+}) {
+  const bundledSurface = resolveBundledProviderPolicySurface(params.provider);
+  if (bundledSurface?.applyConfigDefaults) {
+    return bundledSurface.applyConfigDefaults(params.context) ?? undefined;
+  }
+  return resolveProviderRuntimePlugin(params)?.applyConfigDefaults?.(params.context) ?? undefined;
+}
+
 export function resolveProviderModernModelRef(params: {
   provider: string;
   config?: OpenClawConfig;
@@ -703,6 +829,34 @@ export function resolveProviderSyntheticAuthWithPlugin(params: {
   context: ProviderResolveSyntheticAuthContext;
 }) {
   return resolveProviderRuntimePlugin(params)?.resolveSyntheticAuth?.(params.context) ?? undefined;
+}
+
+export function resolveExternalAuthProfilesWithPlugins(params: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  context: ProviderResolveExternalAuthProfilesContext;
+}): ProviderExternalAuthProfile[] {
+  const matches: ProviderExternalAuthProfile[] = [];
+  for (const plugin of resolveProviderPluginsForHooks(params)) {
+    const profiles =
+      plugin.resolveExternalAuthProfiles?.(params.context) ??
+      plugin.resolveExternalOAuthProfiles?.(params.context);
+    if (!profiles || profiles.length === 0) {
+      continue;
+    }
+    matches.push(...profiles);
+  }
+  return matches;
+}
+
+export function resolveExternalOAuthProfilesWithPlugins(params: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  context: ProviderResolveExternalOAuthProfilesContext;
+}): ProviderExternalAuthProfile[] {
+  return resolveExternalAuthProfilesWithPlugins(params);
 }
 
 export function shouldDeferProviderSyntheticProfileAuthWithPlugin(params: {

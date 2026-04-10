@@ -1,12 +1,6 @@
-import { getBundledChannelContractSurfaces } from "../channels/plugins/contract-surfaces.js";
+import { loadPluginManifestRegistry } from "../plugins/manifest-registry.js";
 import { isRecord } from "../utils.js";
-
-type ChannelUnsupportedSecretRefSurface = {
-  unsupportedSecretRefSurfacePatterns?: readonly string[];
-  collectUnsupportedSecretRefConfigCandidates?: (
-    raw: unknown,
-  ) => UnsupportedSecretRefConfigCandidate[];
-};
+import { loadBundledChannelSecurityContractApi } from "./channel-contract-api.js";
 
 const CORE_UNSUPPORTED_SECRETREF_SURFACE_PATTERNS = [
   "commands.ownerDisplaySecret",
@@ -16,14 +10,23 @@ const CORE_UNSUPPORTED_SECRETREF_SURFACE_PATTERNS = [
   "auth-profiles.oauth.*",
 ] as const;
 
-function listChannelUnsupportedSecretRefSurfaces(): ChannelUnsupportedSecretRefSurface[] {
-  return getBundledChannelContractSurfaces() as ChannelUnsupportedSecretRefSurface[];
+function listBundledChannelIds(): string[] {
+  return [
+    ...new Set(
+      loadPluginManifestRegistry({})
+        .plugins.filter((entry) => entry.origin === "bundled")
+        .flatMap((entry) => entry.channels),
+    ),
+  ].toSorted((left, right) => left.localeCompare(right));
 }
 
 function collectChannelUnsupportedSecretRefSurfacePatterns(): string[] {
-  return listChannelUnsupportedSecretRefSurfaces().flatMap(
-    (surface) => surface.unsupportedSecretRefSurfacePatterns ?? [],
-  );
+  const patterns: string[] = [];
+  for (const channelId of listBundledChannelIds()) {
+    const contract = loadBundledChannelSecurityContractApi(channelId);
+    patterns.push(...(contract?.unsupportedSecretRefSurfacePatterns ?? []));
+  }
+  return patterns;
 }
 
 let cachedUnsupportedSecretRefSurfacePatterns: string[] | null = null;
@@ -84,12 +87,15 @@ export function collectUnsupportedSecretRefConfigCandidates(
     }
   }
 
-  for (const surface of listChannelUnsupportedSecretRefSurfaces()) {
-    const channelCandidates = surface.collectUnsupportedSecretRefConfigCandidates?.(raw);
-    if (!channelCandidates?.length) {
-      continue;
+  if (isRecord(raw.channels)) {
+    for (const channelId of Object.keys(raw.channels)) {
+      const contract = loadBundledChannelSecurityContractApi(channelId);
+      const channelCandidates = contract?.collectUnsupportedSecretRefConfigCandidates?.(raw);
+      if (!channelCandidates?.length) {
+        continue;
+      }
+      candidates.push(...channelCandidates);
     }
-    candidates.push(...channelCandidates);
   }
 
   return candidates;

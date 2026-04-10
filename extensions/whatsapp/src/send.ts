@@ -12,7 +12,7 @@ import {
   resolveWhatsAppMediaMaxBytes,
 } from "./accounts.js";
 import { type ActiveWebSendOptions, requireActiveWebListener } from "./active-listener.js";
-import { loadOutboundMediaFromUrl } from "./runtime-api.js";
+import { loadOutboundMediaFromUrl } from "./outbound-media.runtime.js";
 import { markdownToWhatsApp, toWhatsappJid } from "./text-runtime.js";
 
 const outboundLog = createSubsystemLogger("gateway/channels/whatsapp").child("outbound");
@@ -57,9 +57,8 @@ export async function sendMessageWhatsApp(
     cfg,
     accountId: options.accountId,
   });
-  const { listener: active, accountId: resolvedAccountId } = requireActiveWebListener(
-    effectiveAccountId,
-  );
+  const { listener: active, accountId: resolvedAccountId } =
+    requireActiveWebListener(effectiveAccountId);
   const account = resolveWhatsAppAccount({
     cfg,
     accountId: resolvedAccountId ?? options.accountId,

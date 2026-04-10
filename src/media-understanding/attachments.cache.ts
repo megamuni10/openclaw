@@ -50,6 +50,7 @@ function getDefaultLocalPathRoots(): readonly string[] {
 
 export type MediaAttachmentCacheOptions = {
   localPathRoots?: readonly string[];
+  includeDefaultLocalPathRoots?: boolean;
 };
 
 function resolveRequestUrl(input: RequestInfo | URL): string {
@@ -70,10 +71,10 @@ export class MediaAttachmentCache {
 
   constructor(attachments: MediaAttachment[], options?: MediaAttachmentCacheOptions) {
     this.attachments = attachments;
-    this.localPathRoots = mergeInboundPathRoots(
-      options?.localPathRoots,
-      getDefaultLocalPathRoots(),
-    );
+    this.localPathRoots =
+      options?.includeDefaultLocalPathRoots === false
+        ? mergeInboundPathRoots(options.localPathRoots)
+        : mergeInboundPathRoots(options?.localPathRoots, getDefaultLocalPathRoots());
     for (const attachment of attachments) {
       this.entries.set(attachment.index, { attachment });
     }
@@ -230,10 +231,10 @@ export class MediaAttachmentCache {
   }
 
   async cleanup(): Promise<void> {
-    const cleanups: Array<Promise<void> | void> = [];
+    const cleanups: Promise<void>[] = [];
     for (const entry of this.entries.values()) {
       if (entry.tempCleanup) {
-        cleanups.push(Promise.resolve(entry.tempCleanup()));
+        cleanups.push(entry.tempCleanup());
         entry.tempCleanup = undefined;
       }
     }

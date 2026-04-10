@@ -17,6 +17,7 @@ import {
   normalizeGatewayClientMode,
   normalizeGatewayClientName,
 } from "../gateway/protocol/client-info.js";
+import { normalizeOptionalLowercaseString } from "../shared/string-coerce.js";
 
 export const INTERNAL_MESSAGE_CHANNEL = "webchat" as const;
 export type InternalMessageChannel = typeof INTERNAL_MESSAGE_CHANNEL;
@@ -57,7 +58,7 @@ export function isWebchatClient(client?: GatewayClientInfoLike | null): boolean 
 }
 
 export function normalizeMessageChannel(raw?: string | null): string | undefined {
-  const normalized = raw?.trim().toLowerCase();
+  const normalized = normalizeOptionalLowercaseString(raw);
   if (!normalized) {
     return undefined;
   }
@@ -84,7 +85,7 @@ export const listDeliverableMessageChannels = (): ChannelId[] =>
 
 export type DeliverableMessageChannel = ChannelId;
 
-export type GatewayMessageChannel = string;
+export type GatewayMessageChannel = DeliverableMessageChannel;
 
 export const listGatewayMessageChannels = (): GatewayMessageChannel[] => [
   ...listDeliverableMessageChannels(),
@@ -94,7 +95,7 @@ export const listGatewayMessageChannels = (): GatewayMessageChannel[] => [
 export const listGatewayAgentChannelAliases = (): string[] =>
   Array.from(new Set([...listChatChannelAliases(), ...listPluginChannelAliases()]));
 
-export type GatewayAgentChannelHint = string;
+export type GatewayAgentChannelHint = GatewayMessageChannel;
 
 export const listGatewayAgentChannelValues = (): string[] =>
   Array.from(
@@ -102,11 +103,11 @@ export const listGatewayAgentChannelValues = (): string[] =>
   );
 
 export function isGatewayMessageChannel(value: string): value is GatewayMessageChannel {
-  return listGatewayMessageChannels().includes(value);
+  return listGatewayMessageChannels().includes(value as GatewayMessageChannel);
 }
 
 export function isDeliverableMessageChannel(value: string): value is DeliverableMessageChannel {
-  return listDeliverableMessageChannels().includes(value);
+  return listDeliverableMessageChannels().includes(value as DeliverableMessageChannel);
 }
 
 export function resolveGatewayMessageChannel(

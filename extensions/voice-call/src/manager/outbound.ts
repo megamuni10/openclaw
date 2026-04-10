@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
+import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import type { CallMode } from "../config.js";
+import { resolvePreferredTtsVoice } from "../tts-provider-voice.js";
 import {
   type EndReason,
   TerminalStates,
@@ -100,24 +102,6 @@ function requireConnectedCall(ctx: ConnectedCallContext, callId: CallId): Connec
   };
 }
 
-function resolvePreferredTtsVoice(config: SpeakContext["config"]): string | undefined {
-  const providerId = config.tts?.provider;
-  if (!providerId) {
-    return undefined;
-  }
-  const providerConfig = config.tts?.providers?.[providerId];
-  if (!providerConfig || typeof providerConfig !== "object") {
-    return undefined;
-  }
-  if (typeof providerConfig.voice === "string" && providerConfig.voice.trim()) {
-    return providerConfig.voice;
-  }
-  if (typeof providerConfig.voiceId === "string" && providerConfig.voiceId.trim()) {
-    return providerConfig.voiceId;
-  }
-  return undefined;
-}
-
 export async function initiateCall(
   ctx: InitiateContext,
   to: string,
@@ -203,7 +187,7 @@ export async function initiateCall(
     return {
       callId,
       success: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: formatErrorMessage(err),
     };
   }
 }
@@ -239,7 +223,7 @@ export async function speak(
     // A failed playback should not leave the call stuck in speaking state.
     transitionState(call, "listening");
     persistCallRecord(ctx.storePath, call);
-    return { success: false, error: err instanceof Error ? err.message : String(err) };
+    return { success: false, error: formatErrorMessage(err) };
   }
 }
 
@@ -345,7 +329,7 @@ export async function continueCall(
         : 1;
 
     call.metadata = {
-      ...(call.metadata ?? {}),
+      ...call.metadata,
       turnCount,
       lastTurnLatencyMs,
       lastTurnListenWaitMs,
@@ -364,7 +348,7 @@ export async function continueCall(
 
     return { success: true, transcript };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : String(err) };
+    return { success: false, error: formatErrorMessage(err) };
   } finally {
     ctx.activeTurnCalls.delete(callId);
     clearTranscriptWaiter(ctx, callId);
@@ -401,6 +385,6 @@ export async function endCall(
 
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : String(err) };
+    return { success: false, error: formatErrorMessage(err) };
   }
 }
