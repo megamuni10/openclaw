@@ -23,6 +23,7 @@ import {
   summarizeMSTeamsHtmlAttachments,
 } from "../attachments.js";
 import { isRecord } from "../attachments/shared.js";
+import { convertXlsxMediaToText } from "../xlsx-converter.js";
 import type { StoredConversationReference } from "../conversation-store.js";
 import { formatUnknownError } from "../errors.js";
 import {
@@ -584,7 +585,11 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
         ?.preserveFilenames,
     });
 
-    const mediaPayload = buildMSTeamsMediaPayload(mediaList);
+    // Convert Excel attachments to CSV so the model can read their contents.
+    // xlsx/xls are binary ZIP archives that the core media pipeline drops as
+    // unsupported; converting them here gives the model the actual cell data.
+    const processedMediaList = await convertXlsxMediaToText(mediaList, log);
+    const mediaPayload = buildMSTeamsMediaPayload(processedMediaList);
 
     // Fetch thread history when the message is a reply inside a Teams channel thread.
     // This is a best-effort enhancement; errors are logged and do not block the reply.
