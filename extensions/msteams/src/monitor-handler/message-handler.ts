@@ -48,6 +48,7 @@ import {
   shouldInjectParentContext,
   summarizeParentMessage,
 } from "../thread-parent-context.js";
+import { convertXlsxMediaToText } from "../xlsx-converter.js";
 
 function extractTextFromHtmlAttachments(attachments: MSTeamsAttachmentLike[]): string {
   for (const attachment of attachments) {
@@ -600,7 +601,11 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
         ?.preserveFilenames,
     });
 
-    const mediaPayload = buildMSTeamsMediaPayload(mediaList);
+    // Convert Excel attachments to CSV so the model can read their contents.
+    // xlsx/xls are binary ZIP archives that the core media pipeline drops as
+    // unsupported; converting them here gives the model the actual cell data.
+    const processedMediaList = await convertXlsxMediaToText(mediaList, log);
+    const mediaPayload = buildMSTeamsMediaPayload(processedMediaList);
 
     // Fetch thread history when the message is a reply inside a Teams channel thread.
     // This is a best-effort enhancement; errors are logged and do not block the reply.
@@ -859,7 +864,9 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
         // send a fallback so the user isn't left with silence ("This response was stopped").
         if (counts.tool === 0 && counts.block === 0 && counts.final === 0) {
           try {
-            await context.sendActivity("⚠️ I wasn't able to generate a response. Please try again.");
+            await context.sendActivity(
+              "⚠️ I wasn't able to generate a response. Please try again.",
+            );
           } catch {
             // Best effort.
           }
