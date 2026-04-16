@@ -461,7 +461,25 @@ export async function sanitizeSessionHistory(params: {
           erroredAssistantResultPolicy: "drop",
         })
       : sanitizedToolIds;
-  const sanitizedToolResults = stripToolResultDetails(repairedTools);
+  // Patch 10: replace empty assistant content arrays with a placeholder to
+  // prevent history poisoning (models respond with thinking-only tokens to
+  // empty assistant turns, cascading into more content:[] turns indefinitely).
+  const repairedEmptyContent = repairedTools.map((msg) => {
+    if (
+      msg &&
+      typeof msg === "object" &&
+      (msg as { role?: unknown }).role === "assistant" &&
+      Array.isArray((msg as { content?: unknown }).content) &&
+      (msg as { content: unknown[] }).content.length === 0
+    ) {
+      return {
+        ...(msg as unknown as Record<string, unknown>),
+        content: [{ type: "text", text: "[No response was generated for this turn.]" }],
+      } as unknown as AgentMessage;
+    }
+    return msg;
+  });
+  const sanitizedToolResults = stripToolResultDetails(repairedEmptyContent);
   const sanitizedCompactionUsage = ensureAssistantUsageSnapshots(
     stripStaleAssistantUsageBeforeLatestCompaction(sanitizedToolResults),
   );
