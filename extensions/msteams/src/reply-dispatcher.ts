@@ -210,7 +210,19 @@ export function createMSTeamsReplyDispatcher(params: {
     if (pendingMessages.length === 0) {
       return;
     }
-    const toSend = pendingMessages.splice(0);
+    // Merge consecutive text-only blocks into a single message so that
+    // multiple status updates generated before/between tool calls don't
+    // each produce their own separate Teams bubble.
+    const raw = pendingMessages.splice(0);
+    const toSend: MSTeamsRenderedMessage[] = [];
+    for (const msg of raw) {
+      const last = toSend.at(-1);
+      if (last && last.text && !last.mediaUrl && msg.text && !msg.mediaUrl) {
+        last.text = `${last.text}\n\n${msg.text}`;
+      } else {
+        toSend.push({ ...msg });
+      }
+    }
     const total = toSend.length;
     let ids: string[];
     try {
