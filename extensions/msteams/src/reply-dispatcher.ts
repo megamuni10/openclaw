@@ -341,6 +341,7 @@ export function createMSTeamsReplyDispatcher(params: {
 
   return {
     dispatcher,
+    hadStreamingContent: () => streamController.hadStreamingContent(),
     replyOptions: {
       ...replyOptions,
       ...(streamController.hasStream()

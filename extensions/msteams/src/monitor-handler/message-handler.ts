@@ -808,7 +808,7 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
     logVerboseMessage(`msteams inbound: from=${ctxPayload.From} preview="${preview}"`);
 
     const sharePointSiteId = msteamsCfg?.sharePointSiteId;
-    const { dispatcher, replyOptions, markDispatchIdle } = createMSTeamsReplyDispatcher({
+    const { dispatcher, hadStreamingContent, replyOptions, markDispatchIdle } = createMSTeamsReplyDispatcher({
       cfg,
       agentId: route.agentId,
       sessionKey: route.sessionKey,
@@ -860,9 +860,11 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
       log.info("dispatch complete", { queuedFinal, counts });
 
       if (!queuedFinal) {
-        // Patch 9: if no content was dispatched at all (tool/block/final all zero),
-        // send a fallback so the user isn't left with silence ("This response was stopped").
-        if (counts.tool === 0 && counts.block === 0 && counts.final === 0) {
+        // Patch 9: if no content was dispatched at all (tool/block/final all zero) AND the
+        // streaming message never delivered tokens, send a fallback so the user isn't left
+        // with silence. Skip the fallback when streaming already showed content — the agent
+        // was working (running tools, sending files) and the user wasn't in silence.
+        if (counts.tool === 0 && counts.block === 0 && counts.final === 0 && !hadStreamingContent()) {
           try {
             await context.sendActivity("⚠️ I wasn't able to generate a response. Please try again.");
           } catch {

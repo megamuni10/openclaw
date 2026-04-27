@@ -117,6 +117,10 @@ export function createTeamsReplyStreamController(params: {
       return Boolean(stream);
     },
 
+    hadStreamingContent(): boolean {
+      return streamReceivedTokens;
+    },
+
     /**
      * Whether the Teams streaming card is currently receiving LLM tokens.
      * Used to gate side-channel keepalive activity so we don't overlay plain
