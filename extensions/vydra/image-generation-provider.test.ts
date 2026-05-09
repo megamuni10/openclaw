@@ -1,7 +1,12 @@
-import * as providerAuth from "openclaw/plugin-sdk/provider-auth-runtime";
-import { installPinnedHostnameTestHooks } from "openclaw/plugin-sdk/testing";
+import { installPinnedHostnameTestHooks } from "openclaw/plugin-sdk/test-env";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildVydraImageGenerationProvider } from "./image-generation-provider.js";
+import {
+  binaryResponse,
+  jsonResponse,
+  stubFetch,
+  stubVydraApiKey,
+} from "./provider-test-helpers.test.js";
 
 describe("vydra image-generation provider", () => {
   installPinnedHostnameTestHooks();
@@ -12,33 +17,15 @@ describe("vydra image-generation provider", () => {
   });
 
   it("posts to the www api and downloads the generated image", async () => {
-    vi.spyOn(providerAuth, "resolveApiKeyForProvider").mockResolvedValue({
-      apiKey: "vydra-test-key",
-      source: "env",
-      mode: "api-key",
-    });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            jobId: "job-123",
-            status: "completed",
-            imageUrl: "https://cdn.vydra.ai/generated/test.png",
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(Buffer.from("png-data"), {
-          status: 200,
-          headers: { "Content-Type": "image/png" },
-        }),
-      );
-    vi.stubGlobal("fetch", fetchMock);
+    stubVydraApiKey();
+    const fetchMock = stubFetch(
+      jsonResponse({
+        jobId: "job-123",
+        status: "completed",
+        imageUrl: "https://cdn.vydra.ai/generated/test.png",
+      }),
+      binaryResponse("png-data", "image/png"),
+    );
 
     const provider = buildVydraImageGenerationProvider();
     const result = await provider.generateImage({
@@ -79,40 +66,52 @@ describe("vydra image-generation provider", () => {
     });
   });
 
-  it("polls jobs when the create response is not completed yet", async () => {
-    vi.spyOn(providerAuth, "resolveApiKeyForProvider").mockResolvedValue({
-      apiKey: "vydra-test-key",
-      source: "env",
-      mode: "api-key",
-    });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ jobId: "job-456", status: "queued" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            jobId: "job-456",
-            status: "completed",
-            resultUrls: ["https://cdn.vydra.ai/generated/polled.png"],
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
+  it("passes request SSRF policy to the image creation request", async () => {
+    stubVydraApiKey();
+    const fetchMock = stubFetch(
+      jsonResponse({
+        jobId: "job-123",
+        status: "completed",
+        imageUrl: "https://cdn.vydra.ai/generated/test.png",
+      }),
+      binaryResponse("png-data", "image/png"),
+    );
+
+    const provider = buildVydraImageGenerationProvider();
+    await provider.generateImage({
+      provider: "vydra",
+      model: "grok-imagine",
+      prompt: "draw a cat",
+      cfg: {
+        models: {
+          providers: {
+            vydra: {
+              baseUrl: "https://198.18.0.10/api/v1",
+            },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(Buffer.from("png-data"), {
-          status: 200,
-          headers: { "Content-Type": "image/png" },
-        }),
-      );
-    vi.stubGlobal("fetch", fetchMock);
+        },
+      } as never,
+      ssrfPolicy: { allowRfc2544BenchmarkRange: true },
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://198.18.0.10/api/v1/models/grok-imagine",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("polls jobs when the create response is not completed yet", async () => {
+    stubVydraApiKey();
+    const fetchMock = stubFetch(
+      jsonResponse({ jobId: "job-456", status: "queued" }),
+      jsonResponse({
+        jobId: "job-456",
+        status: "completed",
+        resultUrls: ["https://cdn.vydra.ai/generated/polled.png"],
+      }),
+      binaryResponse("png-data", "image/png"),
+    );
 
     const provider = buildVydraImageGenerationProvider();
     await provider.generateImage({

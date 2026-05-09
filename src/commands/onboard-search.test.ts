@@ -28,6 +28,17 @@ const SEARCH_PROVIDER_PLUGINS: Record<
     label: "Kimi",
     credentialLabel: "Moonshot / Kimi API key",
   },
+  minimax: {
+    pluginId: "minimax",
+    envVars: [
+      "MINIMAX_CODE_PLAN_KEY",
+      "MINIMAX_CODING_API_KEY",
+      "MINIMAX_OAUTH_TOKEN",
+      "MINIMAX_API_KEY",
+    ],
+    label: "MiniMax Search",
+    credentialLabel: "MiniMax Token Plan key or OAuth token",
+  },
   perplexity: {
     pluginId: "perplexity",
     envVars: ["PERPLEXITY_API_KEY", "OPENROUTER_API_KEY"],
@@ -101,7 +112,7 @@ function createSearchProviderEntry(id: string): PluginWebSearchProviderEntry {
       });
       const webSearch = ensureWebSearchConfig(config, metadata.pluginId);
       webSearch.baseUrl = baseUrl;
-      webSearch.model = modelChoice === "__keep__" ? "kimi-k2.5" : modelChoice;
+      webSearch.model = modelChoice === "__keep__" ? "kimi-k2.6" : modelChoice;
       return config;
     };
   }
@@ -110,7 +121,7 @@ function createSearchProviderEntry(id: string): PluginWebSearchProviderEntry {
 
 const searchProviderFixture = vi.hoisted(() => ({
   resolvePluginWebSearchProviders: vi.fn(() =>
-    ["brave", "firecrawl", "gemini", "grok", "kimi", "perplexity", "tavily"].map((id) =>
+    ["brave", "firecrawl", "gemini", "grok", "kimi", "minimax", "perplexity", "tavily"].map((id) =>
       createSearchProviderEntry(id),
     ),
   ),
@@ -135,6 +146,10 @@ const SEARCH_PROVIDER_ENV_VARS = [
   "GOOGLE_API_KEY",
   "KIMI_API_KEY",
   "MOONSHOT_API_KEY",
+  "MINIMAX_API_KEY",
+  "MINIMAX_CODE_PLAN_KEY",
+  "MINIMAX_CODING_API_KEY",
+  "MINIMAX_OAUTH_TOKEN",
   "OPENROUTER_API_KEY",
   "PERPLEXITY_API_KEY",
   "TAVILY_API_KEY",
@@ -323,7 +338,7 @@ describe("setupSearch", () => {
       expect(result.plugins?.entries?.[entry.pluginId]?.enabled).toBe(true);
       if (entry.textMessage) {
         expect(prompter.text).toHaveBeenCalledWith(
-          expect.objectContaining({ message: entry.textMessage }),
+          expect.objectContaining({ message: entry.textMessage, sensitive: true }),
         );
       }
     }
@@ -345,7 +360,7 @@ describe("setupSearch", () => {
     expect(pluginWebSearchApiKey(kimiResult, "moonshot")).toBe("sk-moonshot");
     expect(kimiResult.plugins?.entries?.moonshot?.enabled).toBe(true);
     expect(kimiWebSearchConfig?.baseUrl).toBe("https://api.moonshot.ai/v1");
-    expect(kimiWebSearchConfig?.model).toBe("kimi-k2.5");
+    expect(kimiWebSearchConfig?.model).toBe("kimi-k2.6");
 
     const disabledCfg = createDisabledFirecrawlConfig();
     const { prompter: disabledPrompter } = createPrompter({
@@ -372,7 +387,9 @@ describe("setupSearch", () => {
       expect(result.tools?.web?.search?.provider).toBe("brave");
       expect(result.tools?.web?.search?.enabled).toBeUndefined();
       const missingNote = notes.find((n) => n.message.includes("No Brave Search API key stored"));
-      expect(missingNote).toBeDefined();
+      expect(missingNote).toMatchObject({
+        message: expect.stringContaining("No Brave Search API key stored"),
+      });
     } finally {
       if (original === undefined) {
         delete process.env.BRAVE_API_KEY;
@@ -652,6 +669,7 @@ describe("setupSearch", () => {
         "gemini",
         "grok",
         "kimi",
+        "minimax",
         "perplexity",
         "tavily",
       ]),

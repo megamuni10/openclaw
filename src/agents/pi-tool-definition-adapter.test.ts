@@ -1,5 +1,5 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import type { ClientToolDefinition } from "./pi-embedded-runner/run/params.js";
 import {
@@ -154,27 +154,27 @@ describe("toClientToolDefinitions – param coercion", () => {
 
   it("falls back to empty object for invalid JSON string", async () => {
     const { calledWith } = await executeClientTool("not-json");
-    expect(calledWith).toEqual({});
+    expect(calledWith).toStrictEqual({});
   });
 
   it("falls back to empty object for empty string", async () => {
     const { calledWith } = await executeClientTool("");
-    expect(calledWith).toEqual({});
+    expect(calledWith).toStrictEqual({});
   });
 
   it("falls back to empty object for null", async () => {
     const { calledWith } = await executeClientTool(null);
-    expect(calledWith).toEqual({});
+    expect(calledWith).toStrictEqual({});
   });
 
   it("falls back to empty object for undefined", async () => {
     const { calledWith } = await executeClientTool(undefined);
-    expect(calledWith).toEqual({});
+    expect(calledWith).toStrictEqual({});
   });
 
   it("falls back to empty object for a JSON array string", async () => {
     const { calledWith } = await executeClientTool("[1,2,3]");
-    expect(calledWith).toEqual({});
+    expect(calledWith).toStrictEqual({});
   });
 
   it("handles nested JSON string correctly", async () => {
@@ -201,6 +201,15 @@ describe("client tool name conflict checks", () => {
         tools: [makeClientTool("Weather"), makeClientTool("weather")],
       }),
     ).toEqual(["Weather", "weather"]);
+  });
+
+  it("detects collisions with reserved Pi built-in tool names", () => {
+    expect(
+      findClientToolNameConflicts({
+        tools: [makeClientTool("Bash"), makeClientTool("grep")],
+        existingToolNames: ["bash", "edit", "find", "grep", "ls", "read", "write"],
+      }),
+    ).toEqual(["Bash", "grep"]);
   });
 
   it("wraps conflict errors with a stable prefix", () => {

@@ -113,11 +113,11 @@ describe("setup surface helpers", () => {
       const result = await promptUsername(mockPrompter, null);
 
       expect(result).toBe("mybot");
-      expect(mockPromptText).toHaveBeenCalledWith({
-        message: "Twitch bot username",
-        initialValue: "",
-        validate: expect.any(Function),
-      });
+      const promptArgs = mockPromptText.mock.calls[0]?.[0];
+      expect(promptArgs?.message).toBe("Twitch bot username");
+      expect(promptArgs?.initialValue).toBe("");
+      expect(promptArgs?.validate?.("")).toBe("Required");
+      expect(promptArgs?.validate?.("mybot")).toBeUndefined();
     });
   });
 
@@ -128,11 +128,11 @@ describe("setup surface helpers", () => {
       const result = await promptClientId(mockPrompter, null);
 
       expect(result).toBe("abc123xyz");
-      expect(mockPromptText).toHaveBeenCalledWith({
-        message: "Twitch Client ID",
-        initialValue: "",
-        validate: expect.any(Function),
-      });
+      const promptArgs = mockPromptText.mock.calls[0]?.[0];
+      expect(promptArgs?.message).toBe("Twitch Client ID");
+      expect(promptArgs?.initialValue).toBe("");
+      expect(promptArgs?.validate?.("")).toBe("Required");
+      expect(promptArgs?.validate?.("abc123xyz")).toBeUndefined();
     });
   });
 
@@ -155,7 +155,7 @@ describe("setup surface helpers", () => {
 
       const result = await promptRefreshTokenSetup(mockPrompter, mockAccount);
 
-      expect(result).toEqual({});
+      expect(result).toStrictEqual({});
       expect(mockPromptConfirm).toHaveBeenCalledWith({
         message: "Enable automatic token refresh (requires client secret and refresh token)?",
         initialValue: false,
@@ -200,8 +200,10 @@ describe("setup surface helpers", () => {
       );
 
       // Should return config with username and clientId
-      expect(result).not.toBeNull();
-      const defaultAccount = result?.cfg.channels?.twitch?.accounts?.default as
+      if (!result) {
+        throw new Error("expected Twitch env-token setup result");
+      }
+      const defaultAccount = result.cfg.channels?.twitch?.accounts?.default as
         | { username?: string; clientId?: string }
         | undefined;
       expect(defaultAccount?.username).toBe("testbot");
@@ -237,7 +239,7 @@ describe("setup surface helpers", () => {
   });
 
   describe("defaultAccount setup resolution", () => {
-    it("reports status for the configured default account", async () => {
+    it("reports status for the configured default account", () => {
       const lines = twitchSetupWizard.status?.resolveStatusLines?.({
         cfg: {
           channels: {
@@ -259,7 +261,7 @@ describe("setup surface helpers", () => {
       expect(lines).toEqual(["Twitch (secondary): configured"]);
     });
 
-    it("reports status for the requested account override", async () => {
+    it("reports status for the requested account override", () => {
       const lines = twitchSetupWizard.status?.resolveStatusLines?.({
         cfg: {
           channels: {
@@ -313,6 +315,20 @@ describe("setup surface helpers", () => {
   });
 
   describe("setup wizard account routing", () => {
+    type FinalizeArgs = Parameters<NonNullable<typeof twitchSetupWizard.finalize>>[0];
+
+    async function finalizeTwitchSetupForAccount(cfg: FinalizeArgs["cfg"]) {
+      return await twitchSetupWizard.finalize?.({
+        cfg,
+        accountId: "secondary",
+        credentialValues: {},
+        runtime: {} as FinalizeArgs["runtime"],
+        prompter: mockPrompter,
+        options: {},
+        forceAllowFrom: false,
+      });
+    }
+
     it("rejects reserved account ids before using them as config keys", () => {
       expect(() =>
         setTwitchAccount(
@@ -390,29 +406,21 @@ describe("setup surface helpers", () => {
         .mockResolvedValueOnce("#secondary" as never);
       mockPromptConfirm.mockReset().mockResolvedValue(false as never);
 
-      const result = await twitchSetupWizard.finalize?.({
-        cfg: {
-          channels: {
-            twitch: {
-              defaultAccount: "secondary",
-              accounts: {
-                default: {
-                  username: "default-bot",
-                  accessToken: "oauth:default",
-                  clientId: "default-client",
-                  channel: "#default",
-                },
+      const result = await finalizeTwitchSetupForAccount({
+        channels: {
+          twitch: {
+            defaultAccount: "secondary",
+            accounts: {
+              default: {
+                username: "default-bot",
+                accessToken: "oauth:default",
+                clientId: "default-client",
+                channel: "#default",
               },
             },
           },
-        } as Parameters<NonNullable<typeof twitchSetupWizard.finalize>>[0]["cfg"],
-        accountId: "secondary",
-        credentialValues: {},
-        runtime: {} as Parameters<NonNullable<typeof twitchSetupWizard.finalize>>[0]["runtime"],
-        prompter: mockPrompter,
-        options: {},
-        forceAllowFrom: false,
-      });
+        },
+      } as FinalizeArgs["cfg"]);
 
       const twitch = result?.cfg?.channels?.twitch;
       expect(twitch?.accounts?.secondary?.username).toBe("secondary-bot");
@@ -430,21 +438,13 @@ describe("setup surface helpers", () => {
         .mockResolvedValueOnce("#secondary" as never);
       mockPromptConfirm.mockReset().mockResolvedValue(false as never);
 
-      const result = await twitchSetupWizard.finalize?.({
-        cfg: {
-          channels: {
-            twitch: {
-              accounts: {},
-            },
+      const result = await finalizeTwitchSetupForAccount({
+        channels: {
+          twitch: {
+            accounts: {},
           },
-        } as Parameters<NonNullable<typeof twitchSetupWizard.finalize>>[0]["cfg"],
-        accountId: "secondary",
-        credentialValues: {},
-        runtime: {} as Parameters<NonNullable<typeof twitchSetupWizard.finalize>>[0]["runtime"],
-        prompter: mockPrompter,
-        options: {},
-        forceAllowFrom: false,
-      });
+        },
+      } as FinalizeArgs["cfg"]);
 
       const twitch = result?.cfg?.channels?.twitch;
       expect(twitch?.accounts?.secondary?.accessToken).toBe("oauth:persisted");

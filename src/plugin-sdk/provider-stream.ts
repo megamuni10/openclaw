@@ -1,8 +1,6 @@
-import {
-  createGoogleThinkingPayloadWrapper,
-  sanitizeGoogleThinkingPayload,
-} from "../agents/pi-embedded-runner/google-stream-wrappers.js";
+import { createGoogleThinkingPayloadWrapper } from "../agents/pi-embedded-runner/google-stream-wrappers.js";
 import { createMinimaxFastModeWrapper } from "../agents/pi-embedded-runner/minimax-stream-wrappers.js";
+import { resolveMoonshotThinkingKeep } from "../agents/pi-embedded-runner/moonshot-thinking-stream-wrappers.js";
 import {
   createCodexNativeWebSearchWrapper,
   createOpenAIAttributionHeadersWrapper,
@@ -10,14 +8,15 @@ import {
   createOpenAIReasoningCompatibilityWrapper,
   createOpenAIResponsesContextManagementWrapper,
   createOpenAIServiceTierWrapper,
+  createOpenAIStringContentWrapper,
   createOpenAITextVerbosityWrapper,
+  createOpenAIThinkingLevelWrapper,
   resolveOpenAIFastMode,
   resolveOpenAIServiceTier,
   resolveOpenAITextVerbosity,
 } from "../agents/pi-embedded-runner/openai-stream-wrappers.js";
 import {
   createKilocodeWrapper,
-  createOpenRouterSystemCacheWrapper,
   createOpenRouterWrapper,
   isProxyReasoningUnsupported,
 } from "../agents/pi-embedded-runner/proxy-stream-wrappers.js";
@@ -33,6 +32,7 @@ export {
   applyAnthropicPayloadPolicyToParams,
   buildCopilotDynamicHeaders,
   composeProviderStreamWrappers,
+  createAnthropicThinkingPrefillPayloadWrapper,
   createBedrockNoCacheWrapper,
   createMoonshotThinkingWrapper,
   createToolStreamWrapper,
@@ -40,10 +40,12 @@ export {
   defaultToolStreamExtraParams,
   hasCopilotVisionInput,
   isAnthropicBedrockModel,
+  isOpenAICompatibleThinkingEnabled,
   type ProviderStreamWrapperFactory,
   resolveAnthropicPayloadPolicy,
   resolveMoonshotThinkingType,
   streamWithPayloadPatch,
+  stripTrailingAnthropicAssistantPrefillWhenThinking,
 } from "./provider-stream-shared.js";
 
 export type ProviderStreamFamily =
@@ -73,7 +75,10 @@ export function buildProviderStreamFamilyHooks(
             configuredThinking: ctx.extraParams?.thinking,
             thinkingLevel: ctx.thinkingLevel,
           });
-          return createMoonshotThinkingWrapper(ctx.streamFn, thinkingType);
+          const thinkingKeep = resolveMoonshotThinkingKeep({
+            configuredThinking: ctx.extraParams?.thinking,
+          });
+          return createMoonshotThinkingWrapper(ctx.streamFn, thinkingType, thinkingKeep);
         },
       };
     case "kilocode-thinking":
@@ -114,8 +119,11 @@ export function buildProviderStreamFamilyHooks(
             config: ctx.config,
             agentDir: ctx.agentDir,
           });
+          nextStreamFn = createOpenAIStringContentWrapper(nextStreamFn);
           return createOpenAIResponsesContextManagementWrapper(
-            createOpenAIReasoningCompatibilityWrapper(nextStreamFn),
+            createOpenAIReasoningCompatibilityWrapper(
+              createOpenAIThinkingLevelWrapper(nextStreamFn, ctx.thinkingLevel),
+            ),
             ctx.extraParams,
           );
         },
@@ -127,7 +135,7 @@ export function buildProviderStreamFamilyHooks(
             ctx.modelId === "auto" || isProxyReasoningUnsupported(ctx.modelId)
               ? undefined
               : ctx.thinkingLevel;
-          return createOpenRouterWrapper(ctx.streamFn, thinkingLevel);
+          return createOpenRouterWrapper(ctx.streamFn, thinkingLevel, ctx.extraParams);
         },
       };
     case "tool-stream-default-on":

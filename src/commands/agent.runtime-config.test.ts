@@ -1,10 +1,11 @@
 import path from "node:path";
+import { withTempHome as withTempHomeBase } from "openclaw/plugin-sdk/test-env";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { withTempHome as withTempHomeBase } from "../../test/helpers/temp-home.js";
 import { resolveAgentRuntimeConfig } from "../agents/agent-runtime-config.js";
 import { resolveSession } from "../agents/command/session.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { RuntimeEnv } from "../runtime.js";
+import { createThrowingTestRuntime } from "./test-runtime-config-helpers.js";
 
 type ConfigSnapshotForWrite = {
   snapshot: { valid: boolean; resolved: OpenClawConfig };
@@ -23,6 +24,7 @@ const readConfigFileSnapshotForWriteMock = vi.hoisted(() =>
   vi.fn<() => Promise<ConfigSnapshotForWrite>>(),
 );
 vi.mock("../config/io.js", () => ({
+  getRuntimeConfig: loadConfigMock,
   loadConfig: loadConfigMock,
   readConfigFileSnapshotForWrite: readConfigFileSnapshotForWriteMock,
 }));
@@ -55,13 +57,7 @@ vi.mock("../cli/command-config-resolution.runtime.js", () => ({
   resolveCommandConfigWithSecrets: resolveCommandConfigWithSecretsMock,
 }));
 
-const runtime: RuntimeEnv = {
-  log: vi.fn(),
-  error: vi.fn(),
-  exit: vi.fn(() => {
-    throw new Error("exit");
-  }),
-};
+const runtime = createThrowingTestRuntime();
 
 async function withTempHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
   return withTempHomeBase(fn, { prefix: "openclaw-agent-" });
@@ -154,9 +150,7 @@ describe("agentCommand runtime config", () => {
       expect(resolveCommandConfigWithSecretsMock).toHaveBeenCalledWith({
         config: loadedConfig,
         commandName: "agent",
-        targetIds: expect.objectContaining({
-          has: expect.any(Function),
-        }),
+        targetIds: new Set(["models.providers.*.apiKey"]),
         runtime,
       });
       const targetIds = resolveCommandConfigWithSecretsMock.mock.calls[0]?.[0].targetIds;
@@ -211,8 +205,14 @@ describe("agentCommand runtime config", () => {
       const resolved = resolveSession({ cfg, to: "+1555" });
 
       expect(resolved.storePath).toBe(store);
-      expect(resolved.sessionKey).toBeTruthy();
-      expect(resolved.sessionId).toBeTruthy();
+      expect(resolved.sessionKey).toBeTypeOf("string");
+      const sessionKey = resolved.sessionKey;
+      if (!sessionKey) {
+        throw new Error("expected session key");
+      }
+      expect(sessionKey.length).toBeGreaterThan(0);
+      expect(resolved.sessionId).toBeTypeOf("string");
+      expect(resolved.sessionId.length).toBeGreaterThan(0);
       expect(resolved.isNewSession).toBe(true);
     });
   });

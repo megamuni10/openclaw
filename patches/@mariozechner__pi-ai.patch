@@ -1,8 +1,8 @@
 diff --git a/dist/providers/openai-completions.js b/dist/providers/openai-completions.js
-index 7e3883fd31be12b62d1865364d7c8a206b9b4cfb..cc04c095cceed75af08722952faa585905be11a1 100644
+index 3ec63be978f444f4e6adfbed08e801688508d0b3..220db70890b1ff2b0bf4702114c408ebabb0daae 100644
 --- a/dist/providers/openai-completions.js
 +++ b/dist/providers/openai-completions.js
-@@ -229,6 +229,22 @@ export const streamOpenAICompletions = (model, context, options) => {
+@@ -303,6 +303,22 @@ export const streamOpenAICompletions = (model, context, options) => {
              if (output.stopReason === "error") {
                  throw new Error(output.errorMessage || "Provider returned an error stop reason");
              }
@@ -11,9 +11,9 @@ index 7e3883fd31be12b62d1865364d7c8a206b9b4cfb..cc04c095cceed75af08722952faa5859
 +            // promote the thinking content to a text block so it isn't discarded.
 +            const hasText = output.content.some((b) => b.type === "text" && b.text?.trim());
 +            const hasToolUse = output.content.some((b) => b.type === "tool_use");
-+            const thinkingBlock = output.content.find((b) => b.type === "thinking" && b.thinking?.trim());
-+            if (!hasText && !hasToolUse && thinkingBlock) {
-+                output.content.push({ type: "text", text: thinkingBlock.thinking });
++            const promotableThinkingBlock = output.content.find((b) => b.type === "thinking" && b.thinking?.trim());
++            if (!hasText && !hasToolUse && promotableThinkingBlock) {
++                output.content.push({ type: "text", text: promotableThinkingBlock.thinking });
 +            }
 +            // Fallback: if content is entirely empty but tokens were used, inject a retry message
 +            if (output.content.length === 0 || (!output.content.some((b) => (b.type === "text" && b.text?.trim()) || b.type === "tool_use"))) {
@@ -26,10 +26,10 @@ index 7e3883fd31be12b62d1865364d7c8a206b9b4cfb..cc04c095cceed75af08722952faa5859
              stream.end();
          }
 diff --git a/dist/utils/validation.js b/dist/utils/validation.js
-index 52c74b2a5d8bed50546fba675f3c3f8c5c815127..d59d210fb12277fc1a9e2fd6a5e0ccf07b870ec4 100644
+index 9ba1a5f5aecd015b01d1e88fdb62b8dcca176e52..2cf7608a98c231a77953fe8635d1a7b0d77441ca 100644
 --- a/dist/utils/validation.js
 +++ b/dist/utils/validation.js
-@@ -41,7 +41,13 @@ if (canUseRuntimeCodegen()) {
+@@ -237,7 +237,13 @@ function formatValidationPath(error) {
   * @throws Error if tool is not found or validation fails
   */
  export function validateToolCall(tools, toolCall) {

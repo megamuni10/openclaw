@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { withTempHome as withTempHomeBase } from "openclaw/plugin-sdk/test-env";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { withTempHome as withTempHomeBase } from "../../test/helpers/temp-home.js";
 import "./agent-command.test-mocks.js";
 import * as acpManagerModule from "../acp/control-plane/manager.js";
 import { AcpRuntimeError } from "../acp/runtime/errors.js";
@@ -10,6 +10,7 @@ import * as configIoModule from "../config/io.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { agentCommand } from "./agent.js";
+import { createThrowingTestRuntime } from "./test-runtime-config-helpers.js";
 
 const agentEventMocks = vi.hoisted(() => {
   type AgentEvent = { stream: string; data?: Record<string, unknown>; runId?: string };
@@ -113,13 +114,7 @@ const loadConfigSpy = vi.spyOn(configIoModule, "loadConfig");
 const runEmbeddedPiAgentSpy = vi.spyOn(embeddedModule, "runEmbeddedPiAgent");
 const getAcpSessionManagerSpy = vi.spyOn(acpManagerModule, "getAcpSessionManager");
 
-const runtime: RuntimeEnv = {
-  log: vi.fn(),
-  error: vi.fn(),
-  exit: vi.fn(() => {
-    throw new Error("exit");
-  }),
-};
+const runtime = createThrowingTestRuntime();
 
 async function withTempHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
   return withTempHomeBase(fn, { prefix: "openclaw-agent-acp-" });
@@ -135,8 +130,8 @@ function createAcpEnabledConfig(home: string, storePath: string): OpenClawConfig
     },
     agents: {
       defaults: {
-        model: { primary: "openai/gpt-5.4" },
-        models: { "openai/gpt-5.4": {} },
+        model: { primary: "openai/gpt-5.5" },
+        models: { "openai/gpt-5.5": {} },
         workspace: path.join(home, "openclaw"),
       },
     },
@@ -145,7 +140,9 @@ function createAcpEnabledConfig(home: string, storePath: string): OpenClawConfig
 }
 
 function mockConfig(home: string, storePath: string) {
-  loadConfigSpy.mockReturnValue(createAcpEnabledConfig(home, storePath));
+  const cfg = createAcpEnabledConfig(home, storePath);
+  loadConfigSpy.mockReturnValue(cfg);
+  configIoModule.setRuntimeConfigSnapshot(cfg, cfg);
 }
 
 function mockConfigWithAcpOverrides(
@@ -159,6 +156,7 @@ function mockConfigWithAcpOverrides(
     ...acpOverrides,
   };
   loadConfigSpy.mockReturnValue(cfg);
+  configIoModule.setRuntimeConfigSnapshot(cfg, cfg);
 }
 
 function writeAcpSessionStore(storePath: string, agent = "codex") {
@@ -307,7 +305,7 @@ function expectPersistedAcpTranscript(params: { userContent: string; assistantTe
   );
 }
 
-async function runAcpSessionWithPolicyOverrides(params: {
+async function runAcpSessionWithPolicyOverridesAndExpectBlocked(params: {
   acpOverrides: Partial<NonNullable<OpenClawConfig["acp"]>>;
   resolveSession?: Parameters<typeof mockAcpManager>[0]["resolveSession"];
 }) {
@@ -376,7 +374,17 @@ describe("agentCommand ACP runtime routing", () => {
         { text: "bo", delta: "bo" },
         { text: "book", delta: "ok" },
       ]);
-      expect(repeated.logLines.some((line) => line.includes("book"))).toBe(true);
+      expect(repeated.logLines).toEqual(expect.arrayContaining([expect.stringContaining("book")]));
+    });
+  });
+
+  it("keeps no-reply ACP turns silent", async () => {
+    await withAcpSessionEnv(async () => {
+      const { assistantEvents, logLines } = await runAcpTurnWithAssistantEvents(["NO_REPLY"]);
+
+      expect(assistantEvents.every((event) => !event.text)).toBe(true);
+      expect(logLines).not.toEqual(expect.arrayContaining([expect.stringContaining("NO_REPLY")]));
+      expect(logLines).toStrictEqual([]);
     });
   });
 
@@ -426,7 +434,7 @@ describe("agentCommand ACP runtime routing", () => {
       { enabled: false },
       { dispatch: { enabled: false } },
     ] satisfies Array<Partial<NonNullable<OpenClawConfig["acp"]>>>) {
-      await runAcpSessionWithPolicyOverrides({ acpOverrides });
+      await runAcpSessionWithPolicyOverridesAndExpectBlocked({ acpOverrides });
     }
   });
 

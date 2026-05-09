@@ -9,10 +9,8 @@ import {
   resetTaskRegistryDeliveryRuntimeForTests,
   resetTaskRegistryForTests,
 } from "../tasks/task-registry.js";
-import { withTempDir } from "../test-helpers/temp-dir.js";
+import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { tasksAuditCommand, tasksMaintenanceCommand } from "./tasks.js";
-
-const ORIGINAL_STATE_DIR = process.env.OPENCLAW_STATE_DIR;
 
 function createRuntime(): RuntimeEnv {
   return {
@@ -22,20 +20,31 @@ function createRuntime(): RuntimeEnv {
   } as unknown as RuntimeEnv;
 }
 
+const zeroTaskAuditCounts = {
+  delivery_failed: 0,
+  inconsistent_timestamps: 0,
+  lost: 0,
+  missing_cleanup: 0,
+  stale_queued: 0,
+  stale_running: 0,
+};
+
 async function withTaskCommandStateDir(run: () => Promise<void>): Promise<void> {
-  await withTempDir({ prefix: "openclaw-tasks-command-" }, async (root) => {
-    process.env.OPENCLAW_STATE_DIR = root;
-    resetTaskRegistryDeliveryRuntimeForTests();
-    resetTaskRegistryForTests({ persist: false });
-    resetTaskFlowRegistryForTests({ persist: false });
-    try {
-      await run();
-    } finally {
+  await withOpenClawTestState(
+    { layout: "state-only", prefix: "openclaw-tasks-command-" },
+    async () => {
       resetTaskRegistryDeliveryRuntimeForTests();
       resetTaskRegistryForTests({ persist: false });
       resetTaskFlowRegistryForTests({ persist: false });
-    }
-  });
+      try {
+        await run();
+      } finally {
+        resetTaskRegistryDeliveryRuntimeForTests();
+        resetTaskRegistryForTests({ persist: false });
+        resetTaskFlowRegistryForTests({ persist: false });
+      }
+    },
+  );
 }
 
 describe("tasks commands", () => {
@@ -45,11 +54,6 @@ describe("tasks commands", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    if (ORIGINAL_STATE_DIR === undefined) {
-      delete process.env.OPENCLAW_STATE_DIR;
-    } else {
-      process.env.OPENCLAW_STATE_DIR = ORIGINAL_STATE_DIR;
-    }
     resetTaskRegistryDeliveryRuntimeForTests();
     resetTaskRegistryForTests({ persist: false });
     resetTaskFlowRegistryForTests({ persist: false });
@@ -92,7 +96,7 @@ describe("tasks commands", () => {
         };
       };
 
-      expect(payload.summary.byCode.stale_running).toBe(1);
+      expect(payload.summary.byCode.lost).toBe(1);
       expect(payload.summary.taskFlows.byCode.stale_waiting).toBe(1);
       expect(payload.summary.taskFlows.byCode.missing_linked_tasks).toBe(1);
       expect(payload.summary.combined.total).toBe(3);
@@ -155,9 +159,9 @@ describe("tasks commands", () => {
 
       expect(payload.mode).toBe("preview");
       expect(payload.maintenance.taskFlows.pruned).toBe(1);
-      expect(payload.auditBefore.byCode).toBeDefined();
+      expect(payload.auditBefore.byCode).toStrictEqual(zeroTaskAuditCounts);
       expect(payload.auditBefore.taskFlows.byCode.stale_running).toBe(0);
-      expect(payload.auditAfter.byCode).toBeDefined();
+      expect(payload.auditAfter.byCode).toStrictEqual(zeroTaskAuditCounts);
       expect(payload.auditAfter.taskFlows.byCode.stale_running).toBe(0);
     });
   });

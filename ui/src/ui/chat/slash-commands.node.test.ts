@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   parseSlashCommand,
@@ -77,6 +78,10 @@ describe("parseSlashCommand", () => {
     expect(parseSlashCommand("/export-session")).toMatchObject({
       command: { key: "export-session" },
       args: "",
+    });
+    expect(parseSlashCommand("/side what changed?")).toMatchObject({
+      command: { key: "btw", name: "btw", aliases: expect.arrayContaining(["side"]) },
+      args: "what changed?",
     });
   });
 
@@ -315,7 +320,7 @@ describe("parseSlashCommand", () => {
       includeArgs: true,
       scope: "text",
     });
-    expect(SLASH_COMMANDS.find((entry) => entry.name === "pair")).toBeDefined();
+    expect(SLASH_COMMANDS.map((entry) => entry.name)).toContain("pair");
   });
 
   it("falls back safely when the gateway returns malformed command payload shapes", async () => {
@@ -353,7 +358,7 @@ describe("parseSlashCommand", () => {
       agentId: "main",
     });
     expect(SLASH_COMMANDS.find((entry) => entry.name === "pair")).toBeUndefined();
-    expect(SLASH_COMMANDS.find((entry) => entry.name === "help")).toBeDefined();
+    expect(SLASH_COMMANDS.map((entry) => entry.name)).toContain("help");
 
     await refreshSlashCommands({
       client: { request } as never,
@@ -413,7 +418,7 @@ describe("parseSlashCommand", () => {
     }
     await pending;
 
-    expect(SLASH_COMMANDS.find((entry) => entry.name === "pair")).toBeDefined();
+    expect(SLASH_COMMANDS.map((entry) => entry.name)).toContain("pair");
     expect(SLASH_COMMANDS.find((entry) => entry.name === "dreaming")).toBeUndefined();
   });
 });

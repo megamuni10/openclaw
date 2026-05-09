@@ -12,6 +12,7 @@ type RunMessageActionParams = {
 let testConfig: Record<string, unknown> = {};
 const applyPluginAutoEnable = vi.hoisted(() => vi.fn(({ config }) => ({ config, changes: [] })));
 vi.mock("../config/config.js", () => ({
+  getRuntimeConfig: () => testConfig,
   loadConfig: () => testConfig,
 }));
 
@@ -214,9 +215,9 @@ describe("messageCommand", () => {
       targetIds?: Set<string>;
     };
     expect(call.targetIds).toBeInstanceOf(Set);
-    expect([...(call.targetIds ?? [])].every((id) => id.startsWith("channels.telegram."))).toBe(
-      true,
-    );
+    expect(
+      [...(call.targetIds ?? [])].filter((id) => !id.startsWith("channels.telegram.")),
+    ).toStrictEqual([]);
   });
 
   it("keeps local-fallback resolved cfg and logs diagnostics", async () => {

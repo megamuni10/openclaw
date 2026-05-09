@@ -12,7 +12,7 @@ import {
 import { resetEmbeddedAttemptHarness } from "./attempt.spawn-workspace.test-support.js";
 
 async function resolveBootstrapContext(params: {
-  contextInjectionMode?: "always" | "continuation-skip";
+  contextInjectionMode?: "always" | "continuation-skip" | "never";
   bootstrapContextMode?: string;
   bootstrapContextRunKind?: string;
   bootstrapMode?: "full" | "limited" | "none";
@@ -53,8 +53,8 @@ describe("embedded attempt context injection", () => {
       });
 
     expect(result.isContinuationTurn).toBe(true);
-    expect(result.bootstrapFiles).toEqual([]);
-    expect(result.contextFiles).toEqual([]);
+    expect(result.bootstrapFiles).toStrictEqual([]);
+    expect(result.contextFiles).toStrictEqual([]);
     expect(hasCompletedBootstrapTurn).toHaveBeenCalledWith("/tmp/session.jsonl");
     expect(resolveBootstrapContextForRun).not.toHaveBeenCalled();
   });
@@ -77,6 +77,22 @@ describe("embedded attempt context injection", () => {
     expect(resolver).toHaveBeenCalledTimes(1);
   });
 
+  it("disables bootstrap injection without marking the turn as a continuation", async () => {
+    const { result, hasCompletedBootstrapTurn, resolveBootstrapContextForRun } =
+      await resolveBootstrapContext({
+        contextInjectionMode: "never",
+        bootstrapMode: "full",
+        completed: true,
+      });
+
+    expect(result.isContinuationTurn).toBe(false);
+    expect(result.shouldRecordCompletedBootstrapTurn).toBe(false);
+    expect(result.bootstrapFiles).toStrictEqual([]);
+    expect(result.contextFiles).toStrictEqual([]);
+    expect(hasCompletedBootstrapTurn).not.toHaveBeenCalled();
+    expect(resolveBootstrapContextForRun).not.toHaveBeenCalled();
+  });
+
   it("does not let a stale completed marker suppress pending workspace bootstrap", async () => {
     const resolver = vi.fn(async () => ({
       bootstrapFiles: [{ name: "BOOTSTRAP.md" }],
@@ -97,7 +113,7 @@ describe("embedded attempt context injection", () => {
     expect(resolver).toHaveBeenCalledTimes(1);
   });
 
-  it("forwards senderIsOwner into embedded message-action discovery", async () => {
+  it("forwards senderIsOwner into embedded message-action discovery", () => {
     const input = buildEmbeddedMessageActionDiscoveryInput({
       cfg: {},
       channel: "matrix",
@@ -204,7 +220,7 @@ describe("embedded attempt context injection", () => {
         assemble,
       } satisfies AttemptContextEngine,
       sessionId: "session",
-      sessionKey: "agent:main:discord:dm:test-user",
+      sessionKey: "agent:main:guildchat:dm:test-user",
       messages: limited,
       modelId: "gpt-test",
     });

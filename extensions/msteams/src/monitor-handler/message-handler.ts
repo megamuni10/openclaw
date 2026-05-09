@@ -1,21 +1,27 @@
+import { formatAllowlistMatchMeta } from "openclaw/plugin-sdk/allow-from";
 import { resolveInboundMentionDecision } from "openclaw/plugin-sdk/channel-inbound";
-import { resolveThreadSessionKeys } from "openclaw/plugin-sdk/routing";
+import {
+  logInboundDrop,
+  resolveInboundSessionEnvelopeContext,
+} from "openclaw/plugin-sdk/channel-inbound";
+import { resolveDualTextControlCommandGate } from "openclaw/plugin-sdk/command-gating";
+import {
+  filterSupplementalContextItems,
+  resolveChannelContextVisibilityMode,
+  shouldIncludeSupplementalContext,
+} from "openclaw/plugin-sdk/context-visibility-runtime";
+import { evaluateSenderGroupAccessForPolicy } from "openclaw/plugin-sdk/group-access";
+import {
+  dispatchReplyFromConfigWithSettledDispatcher,
+  hasFinalInboundReplyDispatch,
+  resolveInboundReplyDispatchCounts,
+} from "openclaw/plugin-sdk/inbound-reply-dispatch";
 import {
   buildPendingHistoryContextFromMap,
-  clearHistoryEntriesIfEnabled,
-  dispatchReplyFromConfigWithSettledDispatcher,
   DEFAULT_GROUP_HISTORY_LIMIT,
-  logInboundDrop,
-  evaluateSenderGroupAccessForPolicy,
-  filterSupplementalContextItems,
   recordPendingHistoryEntryIfEnabled,
-  resolveChannelContextVisibilityMode,
-  resolveDualTextControlCommandGate,
-  resolveInboundSessionEnvelopeContext,
-  shouldIncludeSupplementalContext,
-  formatAllowlistMatchMeta,
   type HistoryEntry,
-} from "../../runtime-api.js";
+} from "openclaw/plugin-sdk/reply-history";
 import {
   buildMSTeamsAttachmentPlaceholder,
   buildMSTeamsMediaPayload,
@@ -93,9 +99,13 @@ import { extractMSTeamsPollVote } from "../polls.js";
 import { createMSTeamsReplyDispatcher } from "../reply-dispatcher.js";
 import { getMSTeamsRuntime } from "../runtime.js";
 import type { MSTeamsTurnContext } from "../sdk-types.js";
-import { recordMSTeamsSentMessage, wasMSTeamsMessageSent } from "../sent-message-cache.js";
+import {
+  recordMSTeamsSentMessage,
+  wasMSTeamsMessageSentWithPersistence,
+} from "../sent-message-cache.js";
 import { resolveMSTeamsSenderAccess } from "./access.js";
 import { resolveMSTeamsInboundMedia } from "./inbound-media.js";
+import { resolveMSTeamsRouteSessionKey } from "./thread-session.js";
 
 function buildStoredConversationReference(params: {
   activity: MSTeamsTurnContext["activity"];
@@ -477,15 +487,12 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
     // ;messageid= portion of conversation.id, i.e. the thread root) over
     // activity.replyToId (which may point to a non-root parent in deep threads).
     // DMs and group chats are unaffected — only channel thread replies fork.
-    const channelThreadId = isChannel
-      ? (conversationMessageId ?? activity.replyToId ?? undefined)
-      : undefined;
-    const threadKeys = resolveThreadSessionKeys({
+    route.sessionKey = resolveMSTeamsRouteSessionKey({
       baseSessionKey: route.sessionKey,
-      threadId: channelThreadId,
-      parentSessionKey: channelThreadId ? route.sessionKey : undefined,
+      isChannel,
+      conversationMessageId,
+      replyToId: activity.replyToId,
     });
-    route.sessionKey = threadKeys.sessionKey;
 
     const preview = rawBody.replace(/\s+/g, " ").slice(0, 160);
     const inboundLabel = isDirectMessage
@@ -778,6 +785,7 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
       ChatType: isDirectMessage ? "direct" : isChannel ? "channel" : "group",
       ConversationLabel: envelopeFrom,
       GroupSubject: !isDirectMessage ? conversationType : undefined,
+      GroupSpace: teamId,
       SenderName: senderName,
       SenderId: senderId,
       Provider: "msteams" as const,
@@ -794,15 +802,6 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
       ReplyToSender: includeQuoteContext ? quoteInfo?.sender : undefined,
       ReplyToIsQuote: quoteInfo ? true : undefined,
       ...mediaPayload,
-    });
-
-    await core.channel.session.recordInboundSession({
-      storePath,
-      sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
-      ctx: ctxPayload,
-      onRecordError: (err) => {
-        logVerboseMessage(`msteams: failed updating session meta: ${formatUnknownError(err)}`);
-      },
     });
 
     logVerboseMessage(`msteams inbound: from=${ctxPayload.From} preview="${preview}"`);
@@ -848,18 +847,64 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
 
     log.info("dispatching to agent", { sessionKey: route.sessionKey });
     try {
-      const { queuedFinal, counts } = await dispatchReplyFromConfigWithSettledDispatcher({
-        cfg,
-        ctxPayload,
-        dispatcher,
-        onSettled: () => markDispatchIdle(),
-        replyOptions,
-        configOverride,
+      const turnResult = await core.channel.turn.run({
+        channel: "msteams",
+        accountId: route.accountId,
+        raw: context,
+        adapter: {
+          ingest: () => ({
+            id: activity.id ?? `${teamsFrom}:${Date.now()}`,
+            timestamp: timestamp?.getTime(),
+            rawText: rawBody,
+            textForAgent: bodyForAgent,
+            textForCommands: commandBody,
+            raw: activity,
+          }),
+          resolveTurn: () => ({
+            channel: "msteams",
+            accountId: route.accountId,
+            routeSessionKey: route.sessionKey,
+            storePath,
+            ctxPayload,
+            recordInboundSession: core.channel.session.recordInboundSession,
+            record: {
+              onRecordError: (err) => {
+                logVerboseMessage(
+                  `msteams: failed updating session meta: ${formatUnknownError(err)}`,
+                );
+              },
+            },
+            history: {
+              isGroup: isRoomish,
+              historyKey,
+              historyMap: conversationHistories,
+              limit: historyLimit,
+            },
+            onPreDispatchFailure: () =>
+              core.channel.reply.settleReplyDispatcher({
+                dispatcher,
+                onSettled: () => markDispatchIdle(),
+              }),
+            runDispatch: () =>
+              dispatchReplyFromConfigWithSettledDispatcher({
+                cfg,
+                ctxPayload,
+                dispatcher,
+                onSettled: () => markDispatchIdle(),
+                replyOptions,
+                configOverride,
+              }),
+          }),
+        },
       });
+      const dispatchResult = turnResult.dispatched ? turnResult.dispatchResult : undefined;
+      const queuedFinal = dispatchResult?.queuedFinal ?? false;
+      const counts = resolveInboundReplyDispatchCounts(dispatchResult);
+      const hasFinalResponse = hasFinalInboundReplyDispatch(dispatchResult);
 
       log.info("dispatch complete", { queuedFinal, counts });
 
-      if (!queuedFinal) {
+      if (!hasFinalResponse) {
         // Patch 9: if no content was dispatched at all (tool/block/final all zero) AND the
         // streaming message never delivered tokens, send a fallback so the user isn't left
         // with silence. Skip the fallback when streaming already showed content — the agent
@@ -884,16 +929,9 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
       logVerboseMessage(
         `msteams: delivered ${finalCount} reply${finalCount === 1 ? "" : "ies"} to ${teamsTo}`,
       );
-      if (isRoomish && historyKey) {
-        clearHistoryEntriesIfEnabled({
-          historyMap: conversationHistories,
-          historyKey,
-          limit: historyLimit,
-        });
-      }
     } catch (err) {
       log.error("dispatch failed", { error: formatUnknownError(err) });
-      runtime.error?.(`msteams dispatch failed: ${formatUnknownError(err)}`);
+      runtime.error(`msteams dispatch failed: ${formatUnknownError(err)}`);
       try {
         await context.sendActivity("⚠️ Something went wrong. Please try again.");
       } catch {
@@ -956,7 +994,7 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
       });
     },
     onError: (err) => {
-      runtime.error?.(`msteams debounce flush failed: ${formatUnknownError(err)}`);
+      runtime.error(`msteams debounce flush failed: ${formatUnknownError(err)}`);
     },
   });
 
@@ -972,7 +1010,9 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
     const conversationId = normalizeMSTeamsConversationId(activity.conversation?.id ?? "");
     const replyToId = activity.replyToId ?? undefined;
     const implicitMentionKinds: Array<"reply_to_bot"> =
-      conversationId && replyToId && wasMSTeamsMessageSent(conversationId, replyToId)
+      conversationId &&
+      replyToId &&
+      (await wasMSTeamsMessageSentWithPersistence({ conversationId, messageId: replyToId }))
         ? ["reply_to_bot"]
         : [];
 
