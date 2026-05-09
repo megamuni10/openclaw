@@ -35,6 +35,26 @@ import type { MSTeamsTurnContext } from "./sdk-types.js";
 
 export { pickInformativeStatusText } from "./reply-stream-controller.js";
 
+/**
+ * Merge consecutive text-only messages into a single bubble.
+ * Messages with a mediaUrl are never merged (they carry an attachment).
+ * Exported for testing (otto patch 15).
+ */
+export function coalesceTextOnlyMessages(
+  messages: MSTeamsRenderedMessage[],
+): MSTeamsRenderedMessage[] {
+  const result: MSTeamsRenderedMessage[] = [];
+  for (const msg of messages) {
+    const last = result.at(-1);
+    if (last && last.text && !last.mediaUrl && msg.text && !msg.mediaUrl) {
+      last.text = `${last.text}\n\n${msg.text}`;
+    } else {
+      result.push({ ...msg });
+    }
+  }
+  return result;
+}
+
 export function createMSTeamsReplyDispatcher(params: {
   cfg: OpenClawConfig;
   agentId: string;
@@ -220,19 +240,8 @@ export function createMSTeamsReplyDispatcher(params: {
     if (pendingMessages.length === 0) {
       return;
     }
-    // Merge consecutive text-only blocks into a single message so that
-    // multiple status updates generated before/between tool calls don't
-    // each produce their own separate Teams bubble.
     const raw = pendingMessages.splice(0);
-    const toSend: MSTeamsRenderedMessage[] = [];
-    for (const msg of raw) {
-      const last = toSend.at(-1);
-      if (last && last.text && !last.mediaUrl && msg.text && !msg.mediaUrl) {
-        last.text = `${last.text}\n\n${msg.text}`;
-      } else {
-        toSend.push({ ...msg });
-      }
-    }
+    const toSend = coalesceTextOnlyMessages(raw);
     const total = toSend.length;
     let ids: string[];
     try {

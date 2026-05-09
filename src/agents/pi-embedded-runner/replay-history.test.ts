@@ -1,6 +1,6 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { describe, expect, it } from "vitest";
-import { normalizeAssistantReplayContent } from "./replay-history.js";
+import { normalizeAssistantReplayContent, repairEmptyAssistantContent } from "./replay-history.js";
 
 const FALLBACK_TEXT = "[assistant turn failed before producing content]";
 const COPIED_INBOUND_METADATA_ONLY_TEXT = `Conversation info (untrusted metadata):
@@ -298,5 +298,82 @@ describe("normalizeAssistantReplayContent", () => {
     const out = normalizeAssistantReplayContent(messages);
     expect(out).toHaveLength(1);
     expect(out[0]).toBe(messages[0]);
+  });
+});
+
+// ─── Otto patch 10: kimi-style empty-content cascade repair ──────────────────
+
+function kimiAssistant(stopReason: "stop" | "error" = "stop"): AgentMessage {
+  return {
+    role: "assistant",
+    content: [],
+    api: "openai-completions",
+    provider: "openrouter",
+    model: "openrouter/mistralai/kimi-k2.5",
+    usage: {
+      input: 4321,
+      output: 1369,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 5690,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason,
+    timestamp: 0,
+  } as unknown as AgentMessage;
+}
+
+describe("repairEmptyAssistantContent (otto patch 10)", () => {
+  it("replaces empty content array with placeholder for stop-reason=stop + non-zero tokens", () => {
+    const messages = [userMessage("hi"), kimiAssistant("stop")];
+    const out = repairEmptyAssistantContent(messages);
+    const assistant = out[1] as AgentMessage & { content: unknown[] };
+    expect(assistant.content).toHaveLength(1);
+    expect((assistant.content[0] as { text: string }).text).toBe(
+      "[No response was generated for this turn.]",
+    );
+  });
+
+  it("repairs every empty-content turn in a cascade (multiple consecutive failures)", () => {
+    const messages = [
+      userMessage("run scan"),
+      kimiAssistant(),
+      userMessage("try again"),
+      kimiAssistant(),
+      userMessage("once more"),
+      kimiAssistant(),
+    ];
+    const out = repairEmptyAssistantContent(messages);
+    for (const msg of out) {
+      const m = msg as AgentMessage & { content?: unknown[] };
+      if (m.role === "assistant") {
+        expect(m.content).toHaveLength(1);
+      }
+    }
+  });
+
+  it("does not modify messages that already have content", () => {
+    const messages = [
+      userMessage("hi"),
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Hello!" }],
+        timestamp: 0,
+      } as unknown as AgentMessage,
+    ];
+    const out = repairEmptyAssistantContent(messages);
+    expect(out[1]).toBe(messages[1]);
+  });
+
+  it("does not modify user messages", () => {
+    const messages = [userMessage("test")];
+    const out = repairEmptyAssistantContent(messages);
+    expect(out[0]).toBe(messages[0]);
+  });
+
+  it("returns the same array reference when no changes are needed", () => {
+    const messages = [userMessage("hi")];
+    const out = repairEmptyAssistantContent(messages);
+    expect(out).not.toBe(messages);
   });
 });

@@ -324,6 +324,30 @@ function normalizeAssistantReplayBlockContent(message: AgentMessage, replayConte
   return { ...message, content: sanitizedContent } as AgentMessage;
 }
 
+/**
+ * Replace empty assistant content arrays with a placeholder text block.
+ * Models like kimi-k2.5 occasionally emit content:[] with stopReason="stop"
+ * and non-zero tokens; leaving those in history causes every subsequent turn
+ * to also produce content:[] (cascade loop). Exported for testing (otto patch 10).
+ */
+export function repairEmptyAssistantContent(messages: AgentMessage[]): AgentMessage[] {
+  return messages.map((msg) => {
+    if (
+      msg &&
+      typeof msg === "object" &&
+      (msg as { role?: unknown }).role === "assistant" &&
+      Array.isArray((msg as { content?: unknown }).content) &&
+      (msg as { content: unknown[] }).content.length === 0
+    ) {
+      return {
+        ...(msg as unknown as Record<string, unknown>),
+        content: [{ type: "text", text: "[No response was generated for this turn.]" }],
+      } as unknown as AgentMessage;
+    }
+    return msg;
+  });
+}
+
 export function normalizeAssistantReplayContent(messages: AgentMessage[]): AgentMessage[] {
   let touched = false;
   const out: AgentMessage[] = [];
@@ -757,24 +781,7 @@ export async function sanitizeSessionHistory(params: {
           erroredAssistantResultPolicy: "drop",
         })
       : sanitizedToolIds;
-  // Patch 10: replace empty assistant content arrays with a placeholder to
-  // prevent history poisoning (models respond with thinking-only tokens to
-  // empty assistant turns, cascading into more content:[] turns indefinitely).
-  const repairedEmptyContent = repairedTools.map((msg) => {
-    if (
-      msg &&
-      typeof msg === "object" &&
-      (msg as { role?: unknown }).role === "assistant" &&
-      Array.isArray((msg as { content?: unknown }).content) &&
-      (msg as { content: unknown[] }).content.length === 0
-    ) {
-      return {
-        ...(msg as unknown as Record<string, unknown>),
-        content: [{ type: "text", text: "[No response was generated for this turn.]" }],
-      } as unknown as AgentMessage;
-    }
-    return msg;
-  });
+  const repairedEmptyContent = repairEmptyAssistantContent(repairedTools);
   const sanitizedToolResults = stripToolResultDetails(repairedEmptyContent);
   const sanitizedCompactionUsage = ensureAssistantUsageSnapshots(
     stripStaleAssistantUsageBeforeLatestCompaction(sanitizedToolResults),

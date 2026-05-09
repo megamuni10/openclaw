@@ -77,6 +77,8 @@ describe("tool-policy", () => {
     expect(normalizeToolName(" BASH ")).toBe("exec");
     expect(normalizeToolName("apply-patch")).toBe("apply_patch");
     expect(normalizeToolName("READ")).toBe("read");
+    // Otto patch 11b: kimi-k2.5 emits "sessionsspawn" (no underscore)
+    expect(normalizeToolName("sessionsspawn")).toBe("sessions_spawn");
   });
 
   it("identifies owner-only tools", () => {
