@@ -19,7 +19,9 @@ const OPENROUTER_PROXY_REASONING_UNSUPPORTED_MODEL_IDS = new Set(["openrouter/hu
 function isOpenRouterGoogleModelId(normalized: string): boolean {
   return (
     normalized.startsWith("google/") ||
-    normalized.startsWith("openrouter/google/")
+    normalized.startsWith("~google/") ||
+    normalized.startsWith("openrouter/google/") ||
+    normalized.startsWith("openrouter/~google/")
   );
 }
 const OPENROUTER_KIMI_K2_6_COST = {
