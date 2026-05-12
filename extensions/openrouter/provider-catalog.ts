@@ -12,6 +12,16 @@ const OPENROUTER_DEFAULT_COST = {
   cacheWrite: 0,
 };
 const OPENROUTER_PROXY_REASONING_UNSUPPORTED_MODEL_IDS = new Set(["openrouter/hunter-alpha"]);
+
+// Google models use native thinkingConfig, not OpenAI-style reasoning.effort.
+// Sending reasoning.effort to Gemini via OpenRouter puts it into thinking mode
+// with a large token budget, causing TTFT well above the 120s idle watchdog.
+function isOpenRouterGoogleModelId(normalized: string): boolean {
+  return (
+    normalized.startsWith("google/") ||
+    normalized.startsWith("openrouter/google/")
+  );
+}
 const OPENROUTER_KIMI_K2_6_COST = {
   input: 0.8,
   output: 3.5,
@@ -41,7 +51,8 @@ export function isOpenRouterProxyReasoningUnsupportedModel(modelId: string | und
   }
   return (
     OPENROUTER_PROXY_REASONING_UNSUPPORTED_MODEL_IDS.has(normalized) ||
-    normalized.startsWith("openrouter/hunter-alpha:")
+    normalized.startsWith("openrouter/hunter-alpha:") ||
+    isOpenRouterGoogleModelId(normalized)
   );
 }
 
