@@ -13,8 +13,8 @@
 #   /root/openclaw/scripts/smoke-test.sh
 #   (or via: pnpm otto:smoke)
 #
-# In the auto-update script, run this AFTER `systemctl restart openclaw-gateway`
-# and AFTER the 8-second wait. If it exits 1, log the failure prominently.
+# Run this AFTER `systemctl restart openclaw-gateway` and AFTER a few seconds wait.
+# If it exits 1, do not declare the update successful.
 
 set -euo pipefail
 
