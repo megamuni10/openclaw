@@ -1548,7 +1548,7 @@
     },
     "patchedDependencies": {
       "@whiskeysockets/baileys@7.0.0-rc.9": "patches/@whiskeysockets__baileys@7.0.0-rc.9.patch",
-      "@mariozechner/pi-ai": "patches/@mariozechner__pi-ai.patch"
+      "@mariozechner/pi-ai@0.66.1": "patches/@mariozechner__pi-ai@0.66.1.patch"
     }
   }
 }
